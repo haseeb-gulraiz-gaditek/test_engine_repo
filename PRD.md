@@ -3500,4 +3500,1582 @@ This section defines the technical architecture, infrastructure requirements, te
 
 ---
 
+## Data Models and API Specifications
+
+### Overview
+
+This section defines the core data models, entity relationships, RESTful API endpoints, authentication mechanisms, and example request/response payloads for the Social Media Management Platform. The API follows REST principles with JSON payloads and implements OAuth 2.0 and JWT-based authentication.
+
+---
+
+### Core Data Models
+
+#### 1. User Entity
+
+**Description:** Represents an individual user account in the system.
+
+**Schema:**
+
+```typescript
+interface User {
+  id: string;                           // UUID primary key
+  email: string;                        // Unique email address
+  password_hash: string;                // Bcrypt hashed password
+  first_name: string;
+  last_name: string;
+  profile_picture_url?: string;         // S3 URL
+  timezone: string;                     // IANA timezone (e.g., "America/New_York")
+  language: string;                     // ISO 639-1 code (e.g., "en")
+  role: 'user' | 'admin';               // System-level role
+  status: 'active' | 'suspended' | 'deleted';
+  email_verified: boolean;
+  email_verified_at?: Date;
+  mfa_enabled: boolean;
+  mfa_secret?: string;                  // Encrypted TOTP secret
+  last_login_at?: Date;
+  last_login_ip?: string;
+  created_at: Date;
+  updated_at: Date;
+  deleted_at?: Date;                    // Soft delete timestamp
+}
+```
+
+**Indexes:**
+- Primary Key: `id`
+- Unique: `email`
+- Index: `status`, `created_at`
+
+**Relationships:**
+- One-to-Many: `User → TeamMember` (a user can be member of multiple teams)
+- One-to-Many: `User → Post` (a user creates many posts)
+- One-to-Many: `User → SocialAccount` (a user connects multiple social accounts)
+
+---
+
+#### 2. Team Entity
+
+**Description:** Represents a workspace/organization that groups users and content.
+
+**Schema:**
+
+```typescript
+interface Team {
+  id: string;                           // UUID primary key
+  name: string;
+  slug: string;                         // Unique URL-friendly identifier
+  description?: string;
+  logo_url?: string;                    // S3 URL
+  website?: string;
+  timezone: string;                     // Default timezone for team
+  subscription_tier: 'free' | 'professional' | 'business' | 'enterprise';
+  subscription_status: 'active' | 'trialing' | 'past_due' | 'canceled';
+  subscription_starts_at?: Date;
+  subscription_ends_at?: Date;
+  trial_ends_at?: Date;
+  billing_email?: string;
+  stripe_customer_id?: string;          // Stripe customer reference
+  monthly_post_limit: number;           // Based on subscription tier
+  monthly_posts_used: number;           // Current month usage
+  settings: TeamSettings;               // JSON object
+  created_at: Date;
+  updated_at: Date;
+  deleted_at?: Date;
+}
+
+interface TeamSettings {
+  require_approval: boolean;            // Require post approval before publishing
+  allow_auto_schedule: boolean;
+  default_hashtags: string[];
+  brand_colors: string[];               // Hex color codes
+  brand_fonts: string[];
+  content_categories: string[];         // Custom categories
+}
+```
+
+**Indexes:**
+- Primary Key: `id`
+- Unique: `slug`
+- Index: `subscription_tier`, `subscription_status`, `created_at`
+
+**Relationships:**
+- One-to-Many: `Team → TeamMember` (a team has many members)
+- One-to-Many: `Team → Post` (a team has many posts)
+- One-to-Many: `Team → SocialAccount` (a team has many connected social accounts)
+- One-to-Many: `Team → ContentLibrary` (a team has content library items)
+
+---
+
+#### 3. TeamMember Entity
+
+**Description:** Junction table representing user membership in teams with role-based permissions.
+
+**Schema:**
+
+```typescript
+interface TeamMember {
+  id: string;                           // UUID primary key
+  team_id: string;                      // Foreign key → Team
+  user_id: string;                      // Foreign key → User
+  role: 'owner' | 'admin' | 'manager' | 'editor' | 'viewer';
+  permissions: Permission[];            // Array of permission objects
+  invitation_status: 'pending' | 'accepted' | 'declined';
+  invited_by_user_id?: string;          // Foreign key → User
+  invited_at?: Date;
+  joined_at?: Date;
+  last_active_at?: Date;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface Permission {
+  resource: 'post' | 'schedule' | 'analytics' | 'team' | 'social_account';
+  actions: ('create' | 'read' | 'update' | 'delete' | 'approve' | 'publish')[];
+}
+
+// Example permissions by role:
+const ROLE_PERMISSIONS = {
+  owner: ['*'],                         // All permissions
+  admin: ['create', 'read', 'update', 'delete', 'approve', 'publish'],
+  manager: ['create', 'read', 'update', 'approve', 'publish'],
+  editor: ['create', 'read', 'update'],
+  viewer: ['read']
+};
+```
+
+**Indexes:**
+- Primary Key: `id`
+- Unique Composite: `(team_id, user_id)`
+- Index: `user_id`, `team_id`, `role`, `invitation_status`
+
+**Relationships:**
+- Many-to-One: `TeamMember → Team`
+- Many-to-One: `TeamMember → User`
+
+---
+
+#### 4. SocialAccount Entity
+
+**Description:** Represents a connected social media account (Facebook, Instagram, Twitter, etc.).
+
+**Schema:**
+
+```typescript
+interface SocialAccount {
+  id: string;                           // UUID primary key
+  team_id: string;                      // Foreign key → Team
+  platform: 'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'tiktok' | 'pinterest' | 'youtube';
+  account_type: 'profile' | 'page' | 'group' | 'channel';
+  platform_account_id: string;          // Platform's unique ID
+  username: string;
+  display_name: string;
+  avatar_url?: string;
+  follower_count?: number;
+  is_verified: boolean;
+  connection_status: 'connected' | 'expired' | 'revoked' | 'error';
+  access_token: string;                 // Encrypted OAuth token
+  refresh_token?: string;               // Encrypted OAuth refresh token
+  token_expires_at?: Date;
+  scopes: string[];                     // OAuth scopes granted
+  last_synced_at?: Date;
+  connected_by_user_id: string;         // Foreign key → User
+  connected_at: Date;
+  created_at: Date;
+  updated_at: Date;
+}
+```
+
+**Indexes:**
+- Primary Key: `id`
+- Index: `team_id`, `platform`, `connection_status`
+- Unique Composite: `(platform, platform_account_id, team_id)`
+
+**Relationships:**
+- Many-to-One: `SocialAccount → Team`
+- One-to-Many: `SocialAccount → Post` (via `PostSocialAccount` junction)
+
+---
+
+#### 5. Post Entity
+
+**Description:** Represents a social media post (draft, scheduled, or published).
+
+**Schema:**
+
+```typescript
+interface Post {
+  id: string;                           // UUID primary key
+  team_id: string;                      // Foreign key → Team
+  created_by_user_id: string;           // Foreign key → User
+  title?: string;                       // Internal title
+  content: string;                      // Post text/caption
+  content_html?: string;                // Rich text HTML version
+  media_attachments: MediaAttachment[]; // Array of media objects
+  link_url?: string;                    // Link to share
+  link_preview?: LinkPreview;           // Scraped link metadata
+  hashtags: string[];
+  mentions: string[];
+  location?: Location;
+  status: 'draft' | 'scheduled' | 'publishing' | 'published' | 'failed' | 'archived';
+  approval_status: 'pending' | 'approved' | 'rejected';
+  approved_by_user_id?: string;         // Foreign key → User
+  approved_at?: Date;
+  scheduled_at?: Date;                  // When to publish
+  published_at?: Date;                  // When actually published
+  first_published_at?: Date;            // First time published (for re-posts)
+  expires_at?: Date;                    // Auto-archive/delete time
+  timezone: string;                     // Timezone for scheduling
+  post_type: 'standard' | 'story' | 'reel' | 'video' | 'carousel' | 'poll';
+  platform_specific_settings: Record<string, any>; // Platform-specific options
+  tags: string[];                       // Internal organization tags
+  category?: string;                    // Content category
+  ai_generated: boolean;                // Was content AI-assisted
+  performance_prediction?: number;      // AI predicted engagement score (0-100)
+  created_at: Date;
+  updated_at: Date;
+  deleted_at?: Date;
+}
+
+interface MediaAttachment {
+  id: string;
+  type: 'image' | 'video' | 'gif' | 'document';
+  url: string;                          // S3 URL
+  thumbnail_url?: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  width?: number;
+  height?: number;
+  duration_seconds?: number;            // For videos
+  alt_text?: string;                    // Accessibility description
+  order: number;                        // Order in carousel
+}
+
+interface LinkPreview {
+  url: string;
+  title?: string;
+  description?: string;
+  image_url?: string;
+  site_name?: string;
+}
+
+interface Location {
+  name: string;
+  latitude?: number;
+  longitude?: number;
+  place_id?: string;                    // Platform-specific place ID
+}
+```
+
+**Indexes:**
+- Primary Key: `id`
+- Index: `team_id`, `created_by_user_id`, `status`, `scheduled_at`, `published_at`, `created_at`
+- Full-Text Index: `content`, `title`
+
+**Relationships:**
+- Many-to-One: `Post → Team`
+- Many-to-One: `Post → User` (creator)
+- One-to-Many: `Post → PostSocialAccount` (which accounts to post to)
+- One-to-Many: `Post → Comment` (comments/replies on published posts)
+- One-to-Many: `Post → PostAnalytics` (performance metrics)
+
+---
+
+#### 6. PostSocialAccount Entity
+
+**Description:** Junction table linking posts to specific social accounts they're published to.
+
+**Schema:**
+
+```typescript
+interface PostSocialAccount {
+  id: string;                           // UUID primary key
+  post_id: string;                      // Foreign key → Post
+  social_account_id: string;            // Foreign key → SocialAccount
+  platform_post_id?: string;            // Platform's post ID after publishing
+  platform_url?: string;                // Direct URL to post on platform
+  publish_status: 'pending' | 'publishing' | 'published' | 'failed' | 'deleted';
+  published_at?: Date;
+  error_message?: string;               // If publish failed
+  retry_count: number;                  // Number of retry attempts
+  last_retry_at?: Date;
+  platform_specific_data?: Record<string, any>; // Platform response data
+  created_at: Date;
+  updated_at: Date;
+}
+```
+
+**Indexes:**
+- Primary Key: `id`
+- Index: `post_id`, `social_account_id`, `publish_status`
+- Unique Composite: `(post_id, social_account_id)`
+
+**Relationships:**
+- Many-to-One: `PostSocialAccount → Post`
+- Many-to-One: `PostSocialAccount → SocialAccount`
+
+---
+
+#### 7. Schedule Entity
+
+**Description:** Represents posting schedules and calendar slots.
+
+**Schema:**
+
+```typescript
+interface Schedule {
+  id: string;                           // UUID primary key
+  team_id: string;                      // Foreign key → Team
+  name: string;                         // e.g., "Weekday Morning Posts"
+  description?: string;
+  is_active: boolean;
+  timezone: string;
+  schedule_slots: ScheduleSlot[];       // Array of time slots
+  social_account_ids: string[];         // Which accounts this schedule applies to
+  content_types: string[];              // Which post types (e.g., ['standard', 'reel'])
+  created_by_user_id: string;           // Foreign key → User
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface ScheduleSlot {
+  day_of_week: 0 | 1 | 2 | 3 | 4 | 5 | 6; // 0 = Sunday, 6 = Saturday
+  time: string;                         // HH:mm format (e.g., "09:00")
+  platforms: string[];                  // Which platforms for this slot
+}
+```
+
+**Indexes:**
+- Primary Key: `id`
+- Index: `team_id`, `is_active`
+
+**Relationships:**
+- Many-to-One: `Schedule → Team`
+- Many-to-One: `Schedule → User` (creator)
+
+---
+
+#### 8. Analytics Entity
+
+**Description:** Time-series analytics data for posts and social accounts.
+
+**Schema:**
+
+```typescript
+interface Analytics {
+  id: string;                           // UUID primary key
+  post_social_account_id?: string;      // Foreign key → PostSocialAccount (post-level)
+  social_account_id?: string;           // Foreign key → SocialAccount (account-level)
+  metric_date: Date;                    // Date of metrics (for time-series)
+  metric_timestamp: Date;               // Exact timestamp of data pull
+  platform: string;
+
+  // Engagement Metrics
+  impressions: number;                  // Times displayed
+  reach: number;                        // Unique users reached
+  views: number;                        // Video views
+  clicks: number;                       // Link clicks
+  likes: number;
+  comments: number;
+  shares: number;
+  saves: number;                        // Bookmarks/saves
+  reactions: Record<string, number>;    // Platform-specific reactions (e.g., {love: 5, haha: 2})
+
+  // Engagement Rates (calculated)
+  engagement_rate: number;              // (likes + comments + shares) / reach
+  click_through_rate: number;           // clicks / impressions
+
+  // Audience Metrics
+  follower_count?: number;              // Account followers at this time
+  follower_growth?: number;             // Change since last measurement
+
+  // Audience Demographics (account-level only)
+  audience_age_ranges?: Record<string, number>;      // {"18-24": 30, "25-34": 45, ...}
+  audience_genders?: Record<string, number>;         // {"male": 45, "female": 52, "other": 3}
+  audience_countries?: Record<string, number>;       // {"US": 60, "UK": 15, "CA": 10, ...}
+  audience_cities?: Record<string, number>;
+
+  // Platform-Specific Metrics
+  platform_specific_metrics?: Record<string, any>;
+
+  created_at: Date;
+}
+```
+
+**Indexes:**
+- Primary Key: `id`
+- Index: `post_social_account_id`, `social_account_id`, `metric_date`, `platform`
+- Time-Series Partitioning: Partition by `metric_date` (monthly partitions)
+
+**Relationships:**
+- Many-to-One: `Analytics → PostSocialAccount`
+- Many-to-One: `Analytics → SocialAccount`
+
+---
+
+#### 9. Comment Entity
+
+**Description:** Comments, mentions, and messages from social platforms.
+
+**Schema:**
+
+```typescript
+interface Comment {
+  id: string;                           // UUID primary key
+  post_social_account_id?: string;      // Foreign key → PostSocialAccount
+  social_account_id: string;            // Foreign key → SocialAccount
+  platform_comment_id: string;          // Platform's comment ID
+  comment_type: 'comment' | 'reply' | 'mention' | 'direct_message';
+  author_platform_id: string;           // Platform user ID of commenter
+  author_username: string;
+  author_name: string;
+  author_avatar_url?: string;
+  content: string;
+  parent_comment_id?: string;           // For threaded replies (self-referencing)
+  sentiment?: 'positive' | 'neutral' | 'negative'; // AI sentiment analysis
+  sentiment_score?: number;             // -1 to 1
+  is_spam: boolean;                     // AI spam detection
+  is_hidden: boolean;                   // Hidden by moderator
+  reply_status: 'pending' | 'replied' | 'ignored';
+  replied_at?: Date;
+  replied_by_user_id?: string;          // Foreign key → User
+  reply_content?: string;               // Our reply text
+  created_at_platform: Date;            // Timestamp from platform
+  created_at: Date;                     // When synced to our system
+  updated_at: Date;
+}
+```
+
+**Indexes:**
+- Primary Key: `id`
+- Index: `post_social_account_id`, `social_account_id`, `comment_type`, `reply_status`, `created_at`
+- Full-Text Index: `content`
+
+**Relationships:**
+- Many-to-One: `Comment → PostSocialAccount`
+- Many-to-One: `Comment → SocialAccount`
+- Self-Referencing: `Comment → Comment` (parent comment)
+
+---
+
+#### 10. ContentLibrary Entity
+
+**Description:** Reusable content assets (media, templates, captions).
+
+**Schema:**
+
+```typescript
+interface ContentLibrary {
+  id: string;                           // UUID primary key
+  team_id: string;                      // Foreign key → Team
+  content_type: 'media' | 'template' | 'caption' | 'hashtag_set';
+  title: string;
+  description?: string;
+
+  // Media fields
+  media_url?: string;                   // S3 URL
+  media_type?: 'image' | 'video' | 'gif';
+  thumbnail_url?: string;
+
+  // Template/Caption fields
+  template_content?: string;            // Reusable text template
+  variables?: string[];                 // Template variables (e.g., ["{product_name}", "{price}"])
+
+  // Hashtag set fields
+  hashtags?: string[];
+
+  tags: string[];                       // Organization tags
+  category?: string;
+  usage_count: number;                  // Times used in posts
+  last_used_at?: Date;
+
+  created_by_user_id: string;           // Foreign key → User
+  created_at: Date;
+  updated_at: Date;
+}
+```
+
+**Indexes:**
+- Primary Key: `id`
+- Index: `team_id`, `content_type`, `category`, `usage_count`
+- Full-Text Index: `title`, `description`, `template_content`
+
+**Relationships:**
+- Many-to-One: `ContentLibrary → Team`
+- Many-to-One: `ContentLibrary → User` (creator)
+
+---
+
+### Entity Relationship Diagram
+
+```
+┌─────────────────┐
+│      User       │
+│  (id, email)    │
+└────────┬────────┘
+         │
+         │ 1:N
+         ▼
+┌─────────────────┐         ┌─────────────────┐
+│   TeamMember    │   N:1   │      Team       │
+│ (user, team,    │◄────────│  (id, name,     │
+│  role)          │         │   subscription) │
+└─────────────────┘         └────────┬────────┘
+                                     │
+                    ┌────────────────┼────────────────┐
+                    │                │                │
+                    │ 1:N            │ 1:N            │ 1:N
+                    ▼                ▼                ▼
+         ┌─────────────────┐  ┌──────────────┐  ┌──────────────┐
+         │      Post       │  │SocialAccount │  │ContentLibrary│
+         │  (content,      │  │  (platform,  │  │   (media,    │
+         │   status,       │  │   tokens)    │  │  templates)  │
+         │   scheduled_at) │  └──────┬───────┘  └──────────────┘
+         └────────┬────────┘         │
+                  │                  │
+                  │ N:M (junction)   │
+                  ▼                  │
+         ┌─────────────────┐         │
+         │PostSocialAccount│◄────────┘
+         │  (post + acct,  │   N:1
+         │   publish_      │
+         │   status)       │
+         └────────┬────────┘
+                  │
+                  │ 1:N
+                  ▼
+         ┌─────────────────┐
+         │    Analytics    │
+         │  (metrics,      │
+         │   time-series)  │
+         └─────────────────┘
+                  │
+                  │ 1:N
+                  ▼
+         ┌─────────────────┐
+         │    Comment      │
+         │  (engagement,   │
+         │   replies)      │
+         └─────────────────┘
+```
+
+**Cardinality Summary:**
+
+| Relationship | Cardinality | Description |
+|--------------|-------------|-------------|
+| User → TeamMember | 1:N | A user can belong to multiple teams |
+| Team → TeamMember | 1:N | A team has multiple members |
+| Team → Post | 1:N | A team creates many posts |
+| Team → SocialAccount | 1:N | A team connects multiple social accounts |
+| Team → ContentLibrary | 1:N | A team has content library items |
+| User → Post | 1:N | A user creates many posts |
+| Post → PostSocialAccount | 1:N | A post publishes to multiple accounts |
+| SocialAccount → PostSocialAccount | 1:N | An account has many published posts |
+| PostSocialAccount → Analytics | 1:N | Each published post has time-series analytics |
+| PostSocialAccount → Comment | 1:N | Each published post receives comments |
+| SocialAccount → Analytics | 1:N | Each account has aggregated analytics |
+| Comment → Comment | 1:N | Comments can have threaded replies (self-ref) |
+
+---
+
+### API Specifications
+
+#### API Design Principles
+
+- **Protocol:** RESTful API over HTTPS
+- **Base URL:** `https://api.platform.com/v1`
+- **Data Format:** JSON (request and response bodies)
+- **HTTP Methods:** GET (read), POST (create), PUT/PATCH (update), DELETE (delete)
+- **Status Codes:** Standard HTTP status codes (200, 201, 400, 401, 403, 404, 500)
+- **Versioning:** URI versioning (`/v1`, `/v2`)
+- **Rate Limiting:** Header-based (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`)
+- **Pagination:** Cursor-based for large datasets
+- **Filtering & Sorting:** Query parameters (`?filter[status]=published&sort=-created_at`)
+
+---
+
+#### Authentication & Authorization
+
+##### 1. Authentication Mechanisms
+
+**JWT (JSON Web Tokens):**
+- **Use Case:** Web/mobile app user authentication
+- **Flow:**
+  1. User logs in with email/password
+  2. Server validates credentials
+  3. Server issues JWT access token (15-min expiry) + refresh token (30-day expiry)
+  4. Client includes access token in `Authorization: Bearer <token>` header
+  5. Client refreshes access token using refresh token before expiry
+
+**Access Token Structure:**
+```json
+{
+  "header": {
+    "alg": "RS256",
+    "typ": "JWT"
+  },
+  "payload": {
+    "sub": "user-uuid-here",
+    "email": "user@example.com",
+    "iat": 1699564800,
+    "exp": 1699565700,
+    "iss": "platform.com",
+    "aud": "platform-api",
+    "scope": ["read", "write"]
+  }
+}
+```
+
+**OAuth 2.0:**
+- **Use Case:** Third-party integrations, API partners
+- **Supported Flows:**
+  - Authorization Code Flow (for web apps)
+  - Client Credentials Flow (for service-to-service)
+- **Scopes:**
+  - `posts:read` - Read posts
+  - `posts:write` - Create/edit posts
+  - `posts:publish` - Publish posts
+  - `analytics:read` - Read analytics
+  - `team:read` - Read team data
+  - `team:write` - Manage team settings
+  - `social_accounts:read` - Read connected accounts
+  - `social_accounts:write` - Connect/disconnect accounts
+
+**API Keys:**
+- **Use Case:** Server-to-server integrations, webhooks
+- **Format:** `pk_live_xxxxxxxxxxxxxxxxxxxx` (prefix indicates environment)
+- **Usage:** Include in `X-API-Key` header
+- **Permissions:** Scoped to specific team and operations
+
+**Multi-Factor Authentication (MFA):**
+- **Method:** TOTP (Time-based One-Time Password)
+- **Flow:**
+  1. User enables MFA in settings
+  2. System generates TOTP secret, shows QR code
+  3. User scans with authenticator app (Google Authenticator, Authy)
+  4. On login, user provides email/password + 6-digit code
+  5. System validates code with time tolerance (±30 seconds)
+
+---
+
+##### 2. Authorization (RBAC)
+
+**Role Hierarchy:**
+```
+Owner > Admin > Manager > Editor > Viewer
+```
+
+**Permission Matrix:**
+
+| Resource | Owner | Admin | Manager | Editor | Viewer |
+|----------|-------|-------|---------|--------|--------|
+| **Posts** |
+| Create | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Read | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Update | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Delete | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Publish | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Approve | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Team** |
+| Invite members | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Remove members | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Change settings | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Delete team | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Social Accounts** |
+| Connect | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Disconnect | ✅ | ✅ | ❌ | ❌ | ❌ |
+| View tokens | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Analytics** |
+| View | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Export | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Billing** |
+| Manage | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+**Authorization Enforcement:**
+- Every API request validates JWT token
+- Extracts `user_id` from token payload
+- Queries `TeamMember` table for user's role in the team
+- Checks permission matrix for requested operation
+- Returns `403 Forbidden` if unauthorized
+
+---
+
+#### Core API Endpoints
+
+##### Authentication Endpoints
+
+**POST /auth/register**
+- **Description:** Register a new user account
+- **Authentication:** None (public endpoint)
+- **Request Body:**
+  ```json
+  {
+    "email": "user@example.com",
+    "password": "SecurePass123!",
+    "first_name": "Jane",
+    "last_name": "Doe",
+    "timezone": "America/New_York"
+  }
+  ```
+- **Response (201 Created):**
+  ```json
+  {
+    "user": {
+      "id": "usr_a1b2c3d4e5f6",
+      "email": "user@example.com",
+      "first_name": "Jane",
+      "last_name": "Doe",
+      "timezone": "America/New_York",
+      "created_at": "2024-11-10T14:30:00Z"
+    },
+    "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "rt_xyz789abc123",
+    "expires_in": 900
+  }
+  ```
+- **Error Responses:**
+  - `400 Bad Request` - Invalid input (e.g., weak password)
+  - `409 Conflict` - Email already exists
+
+---
+
+**POST /auth/login**
+- **Description:** Authenticate user and receive tokens
+- **Authentication:** None
+- **Request Body:**
+  ```json
+  {
+    "email": "user@example.com",
+    "password": "SecurePass123!",
+    "mfa_code": "123456"
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "user": {
+      "id": "usr_a1b2c3d4e5f6",
+      "email": "user@example.com",
+      "first_name": "Jane",
+      "last_name": "Doe"
+    },
+    "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "rt_xyz789abc123",
+    "expires_in": 900
+  }
+  ```
+- **Error Responses:**
+  - `401 Unauthorized` - Invalid credentials or MFA code
+  - `429 Too Many Requests` - Rate limit exceeded (5 failed attempts)
+
+---
+
+**POST /auth/refresh**
+- **Description:** Refresh access token using refresh token
+- **Authentication:** None (uses refresh token)
+- **Request Body:**
+  ```json
+  {
+    "refresh_token": "rt_xyz789abc123"
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expires_in": 900
+  }
+  ```
+- **Error Responses:**
+  - `401 Unauthorized` - Invalid or expired refresh token
+
+---
+
+**POST /auth/logout**
+- **Description:** Invalidate refresh token
+- **Authentication:** Bearer token required
+- **Request Body:**
+  ```json
+  {
+    "refresh_token": "rt_xyz789abc123"
+  }
+  ```
+- **Response (204 No Content)**
+
+---
+
+##### Team Endpoints
+
+**GET /teams**
+- **Description:** List all teams the authenticated user belongs to
+- **Authentication:** Bearer token required
+- **Query Parameters:**
+  - `limit` (integer, default: 20, max: 100)
+  - `cursor` (string, pagination cursor)
+- **Response (200 OK):**
+  ```json
+  {
+    "data": [
+      {
+        "id": "team_xyz123",
+        "name": "Acme Corp Marketing",
+        "slug": "acme-marketing",
+        "logo_url": "https://cdn.platform.com/teams/acme/logo.png",
+        "subscription_tier": "business",
+        "member_role": "admin",
+        "member_permissions": ["create", "read", "update", "delete", "approve"],
+        "created_at": "2024-01-15T10:00:00Z"
+      }
+    ],
+    "pagination": {
+      "next_cursor": "cursor_abc123",
+      "has_more": false
+    }
+  }
+  ```
+
+---
+
+**POST /teams**
+- **Description:** Create a new team
+- **Authentication:** Bearer token required
+- **Request Body:**
+  ```json
+  {
+    "name": "My New Team",
+    "slug": "my-new-team",
+    "timezone": "America/Los_Angeles",
+    "description": "Team for managing social media"
+  }
+  ```
+- **Response (201 Created):**
+  ```json
+  {
+    "id": "team_new456",
+    "name": "My New Team",
+    "slug": "my-new-team",
+    "subscription_tier": "free",
+    "subscription_status": "trialing",
+    "trial_ends_at": "2024-12-10T23:59:59Z",
+    "monthly_post_limit": 30,
+    "created_at": "2024-11-10T15:00:00Z"
+  }
+  ```
+- **Error Responses:**
+  - `400 Bad Request` - Invalid input
+  - `409 Conflict` - Slug already taken
+
+---
+
+**GET /teams/:team_id**
+- **Description:** Get team details
+- **Authentication:** Bearer token required
+- **Authorization:** User must be team member
+- **Response (200 OK):**
+  ```json
+  {
+    "id": "team_xyz123",
+    "name": "Acme Corp Marketing",
+    "slug": "acme-marketing",
+    "description": "Marketing team for Acme Corp",
+    "logo_url": "https://cdn.platform.com/teams/acme/logo.png",
+    "timezone": "America/New_York",
+    "subscription_tier": "business",
+    "subscription_status": "active",
+    "monthly_post_limit": 500,
+    "monthly_posts_used": 127,
+    "settings": {
+      "require_approval": true,
+      "allow_auto_schedule": true,
+      "default_hashtags": ["#AcmeCorp", "#Marketing"]
+    },
+    "member_count": 8,
+    "social_account_count": 12,
+    "created_at": "2024-01-15T10:00:00Z"
+  }
+  ```
+
+---
+
+**PATCH /teams/:team_id**
+- **Description:** Update team settings
+- **Authentication:** Bearer token required
+- **Authorization:** Owner or Admin role
+- **Request Body:**
+  ```json
+  {
+    "name": "Updated Team Name",
+    "description": "New description",
+    "settings": {
+      "require_approval": false,
+      "default_hashtags": ["#NewHashtag"]
+    }
+  }
+  ```
+- **Response (200 OK):** Returns updated team object
+
+---
+
+##### Post Endpoints
+
+**GET /teams/:team_id/posts**
+- **Description:** List posts for a team
+- **Authentication:** Bearer token required
+- **Authorization:** Team member with read permission
+- **Query Parameters:**
+  - `status` (string: draft, scheduled, published, failed)
+  - `created_by` (string: user_id)
+  - `scheduled_after` (ISO 8601 datetime)
+  - `scheduled_before` (ISO 8601 datetime)
+  - `sort` (string: created_at, scheduled_at, -created_at, etc.)
+  - `limit` (integer, default: 20, max: 100)
+  - `cursor` (string, pagination cursor)
+- **Response (200 OK):**
+  ```json
+  {
+    "data": [
+      {
+        "id": "post_abc123",
+        "team_id": "team_xyz123",
+        "title": "Black Friday Sale Announcement",
+        "content": "🎉 Our biggest sale of the year starts Friday! Get 50% off everything. #BlackFriday #Sale",
+        "media_attachments": [
+          {
+            "id": "media_img001",
+            "type": "image",
+            "url": "https://cdn.platform.com/media/sale-banner.jpg",
+            "thumbnail_url": "https://cdn.platform.com/media/sale-banner-thumb.jpg",
+            "width": 1200,
+            "height": 630
+          }
+        ],
+        "hashtags": ["BlackFriday", "Sale"],
+        "status": "scheduled",
+        "approval_status": "approved",
+        "scheduled_at": "2024-11-29T10:00:00Z",
+        "timezone": "America/New_York",
+        "social_accounts": [
+          {
+            "social_account_id": "sa_fb001",
+            "platform": "facebook",
+            "username": "AcmeCorp",
+            "publish_status": "pending"
+          },
+          {
+            "social_account_id": "sa_ig001",
+            "platform": "instagram",
+            "username": "acmecorp_official",
+            "publish_status": "pending"
+          }
+        ],
+        "created_by": {
+          "id": "usr_a1b2c3",
+          "name": "Jane Doe"
+        },
+        "created_at": "2024-11-10T14:00:00Z",
+        "updated_at": "2024-11-10T14:30:00Z"
+      }
+    ],
+    "pagination": {
+      "next_cursor": "cursor_xyz789",
+      "has_more": true
+    }
+  }
+  ```
+
+---
+
+**POST /teams/:team_id/posts**
+- **Description:** Create a new post (draft or scheduled)
+- **Authentication:** Bearer token required
+- **Authorization:** Team member with create permission
+- **Request Body:**
+  ```json
+  {
+    "title": "Weekend Special Offer",
+    "content": "Don't miss our weekend special! 🌟 #WeekendVibes",
+    "media_attachment_ids": ["media_img002"],
+    "social_account_ids": ["sa_fb001", "sa_ig001", "sa_tw001"],
+    "status": "scheduled",
+    "scheduled_at": "2024-11-16T12:00:00Z",
+    "timezone": "America/Los_Angeles",
+    "hashtags": ["WeekendVibes", "SpecialOffer"],
+    "platform_specific_settings": {
+      "instagram": {
+        "post_type": "reel",
+        "cover_frame_time": 3.5
+      },
+      "twitter": {
+        "thread": false
+      }
+    }
+  }
+  ```
+- **Response (201 Created):**
+  ```json
+  {
+    "id": "post_new789",
+    "team_id": "team_xyz123",
+    "title": "Weekend Special Offer",
+    "content": "Don't miss our weekend special! 🌟 #WeekendVibes",
+    "status": "scheduled",
+    "approval_status": "pending",
+    "scheduled_at": "2024-11-16T12:00:00Z",
+    "created_at": "2024-11-10T16:00:00Z"
+  }
+  ```
+- **Error Responses:**
+  - `400 Bad Request` - Invalid input (e.g., missing content)
+  - `403 Forbidden` - Insufficient permissions
+  - `422 Unprocessable Entity` - Business logic error (e.g., monthly post limit reached)
+
+---
+
+**GET /teams/:team_id/posts/:post_id**
+- **Description:** Get post details
+- **Authentication:** Bearer token required
+- **Authorization:** Team member with read permission
+- **Response (200 OK):**
+  ```json
+  {
+    "id": "post_abc123",
+    "team_id": "team_xyz123",
+    "title": "Black Friday Sale Announcement",
+    "content": "🎉 Our biggest sale of the year starts Friday!",
+    "media_attachments": [...],
+    "status": "published",
+    "published_at": "2024-11-29T10:00:15Z",
+    "social_accounts": [
+      {
+        "social_account_id": "sa_fb001",
+        "platform": "facebook",
+        "platform_post_id": "123456789_987654321",
+        "platform_url": "https://facebook.com/AcmeCorp/posts/987654321",
+        "publish_status": "published",
+        "published_at": "2024-11-29T10:00:15Z"
+      }
+    ],
+    "analytics_summary": {
+      "total_impressions": 45230,
+      "total_reach": 38456,
+      "total_engagement": 3421,
+      "engagement_rate": 8.9
+    }
+  }
+  ```
+
+---
+
+**PATCH /teams/:team_id/posts/:post_id**
+- **Description:** Update a post (only drafts and scheduled posts)
+- **Authentication:** Bearer token required
+- **Authorization:** Team member with update permission (or creator)
+- **Request Body:**
+  ```json
+  {
+    "content": "Updated post content",
+    "scheduled_at": "2024-11-30T14:00:00Z"
+  }
+  ```
+- **Response (200 OK):** Returns updated post object
+- **Error Responses:**
+  - `400 Bad Request` - Cannot edit published posts
+  - `403 Forbidden` - Insufficient permissions
+
+---
+
+**DELETE /teams/:team_id/posts/:post_id**
+- **Description:** Delete a post (soft delete)
+- **Authentication:** Bearer token required
+- **Authorization:** Team member with delete permission
+- **Response (204 No Content)**
+- **Error Responses:**
+  - `403 Forbidden` - Insufficient permissions
+  - `422 Unprocessable Entity` - Cannot delete currently publishing post
+
+---
+
+**POST /teams/:team_id/posts/:post_id/publish**
+- **Description:** Immediately publish a draft or scheduled post
+- **Authentication:** Bearer token required
+- **Authorization:** Team member with publish permission
+- **Response (200 OK):**
+  ```json
+  {
+    "id": "post_abc123",
+    "status": "publishing",
+    "message": "Post is being published to 3 social accounts"
+  }
+  ```
+- **Error Responses:**
+  - `403 Forbidden` - Insufficient permissions or post requires approval
+  - `422 Unprocessable Entity` - Post already published
+
+---
+
+##### Social Account Endpoints
+
+**GET /teams/:team_id/social-accounts**
+- **Description:** List connected social accounts
+- **Authentication:** Bearer token required
+- **Authorization:** Team member
+- **Response (200 OK):**
+  ```json
+  {
+    "data": [
+      {
+        "id": "sa_fb001",
+        "team_id": "team_xyz123",
+        "platform": "facebook",
+        "account_type": "page",
+        "username": "AcmeCorp",
+        "display_name": "Acme Corporation",
+        "avatar_url": "https://graph.facebook.com/v19.0/123456/picture",
+        "follower_count": 15420,
+        "connection_status": "connected",
+        "connected_at": "2024-01-20T09:30:00Z",
+        "last_synced_at": "2024-11-10T16:45:00Z"
+      },
+      {
+        "id": "sa_ig001",
+        "platform": "instagram",
+        "username": "acmecorp_official",
+        "follower_count": 24789,
+        "connection_status": "connected"
+      }
+    ]
+  }
+  ```
+
+---
+
+**POST /teams/:team_id/social-accounts/connect**
+- **Description:** Initiate OAuth connection to social platform
+- **Authentication:** Bearer token required
+- **Authorization:** Team member with connect permission
+- **Request Body:**
+  ```json
+  {
+    "platform": "facebook",
+    "redirect_uri": "https://app.platform.com/callback"
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "authorization_url": "https://www.facebook.com/v19.0/dialog/oauth?client_id=...&redirect_uri=...&scope=...",
+    "state": "state_token_xyz789"
+  }
+  ```
+- **Flow:**
+  1. Client receives `authorization_url`
+  2. Client redirects user to `authorization_url`
+  3. User authorizes on platform
+  4. Platform redirects to `redirect_uri` with `code` and `state`
+  5. Client calls `/social-accounts/callback` with code
+
+---
+
+**POST /teams/:team_id/social-accounts/callback**
+- **Description:** Complete OAuth connection (exchange authorization code for tokens)
+- **Authentication:** Bearer token required
+- **Request Body:**
+  ```json
+  {
+    "platform": "facebook",
+    "code": "authorization_code_from_platform",
+    "state": "state_token_xyz789"
+  }
+  ```
+- **Response (201 Created):**
+  ```json
+  {
+    "id": "sa_new123",
+    "platform": "facebook",
+    "username": "NewPageName",
+    "connection_status": "connected",
+    "connected_at": "2024-11-10T17:00:00Z"
+  }
+  ```
+
+---
+
+**DELETE /teams/:team_id/social-accounts/:account_id**
+- **Description:** Disconnect social account
+- **Authentication:** Bearer token required
+- **Authorization:** Admin or Owner role
+- **Response (204 No Content)**
+
+---
+
+##### Analytics Endpoints
+
+**GET /teams/:team_id/analytics/overview**
+- **Description:** Get aggregated analytics for team
+- **Authentication:** Bearer token required
+- **Authorization:** Team member with analytics read permission
+- **Query Parameters:**
+  - `start_date` (ISO 8601 date, required)
+  - `end_date` (ISO 8601 date, required)
+  - `platforms` (comma-separated: facebook,instagram,twitter)
+- **Response (200 OK):**
+  ```json
+  {
+    "period": {
+      "start_date": "2024-11-01",
+      "end_date": "2024-11-10"
+    },
+    "summary": {
+      "total_posts_published": 45,
+      "total_impressions": 512340,
+      "total_reach": 387654,
+      "total_engagement": 28901,
+      "average_engagement_rate": 7.46,
+      "follower_growth": 1234
+    },
+    "by_platform": {
+      "facebook": {
+        "posts": 15,
+        "impressions": 203456,
+        "engagement": 12345,
+        "engagement_rate": 6.07
+      },
+      "instagram": {
+        "posts": 20,
+        "impressions": 256789,
+        "engagement": 14232,
+        "engagement_rate": 5.54
+      },
+      "twitter": {
+        "posts": 10,
+        "impressions": 52095,
+        "engagement": 2324,
+        "engagement_rate": 4.46
+      }
+    },
+    "top_posts": [
+      {
+        "post_id": "post_top001",
+        "title": "Viral Product Launch",
+        "impressions": 45230,
+        "engagement": 4521,
+        "engagement_rate": 9.99
+      }
+    ]
+  }
+  ```
+
+---
+
+**GET /teams/:team_id/posts/:post_id/analytics**
+- **Description:** Get detailed analytics for specific post
+- **Authentication:** Bearer token required
+- **Authorization:** Team member with analytics read permission
+- **Response (200 OK):**
+  ```json
+  {
+    "post_id": "post_abc123",
+    "published_at": "2024-11-05T10:00:00Z",
+    "platforms": [
+      {
+        "platform": "facebook",
+        "platform_post_id": "123456789",
+        "platform_url": "https://facebook.com/...",
+        "metrics": {
+          "impressions": 25430,
+          "reach": 21345,
+          "clicks": 1234,
+          "likes": 567,
+          "comments": 89,
+          "shares": 45,
+          "engagement_rate": 6.5,
+          "click_through_rate": 4.85
+        },
+        "audience_demographics": {
+          "age_ranges": {
+            "18-24": 15,
+            "25-34": 42,
+            "35-44": 28,
+            "45-54": 10,
+            "55+": 5
+          },
+          "genders": {
+            "male": 48,
+            "female": 51,
+            "other": 1
+          },
+          "top_countries": {
+            "US": 65,
+            "CA": 15,
+            "UK": 10,
+            "AU": 5,
+            "OTHER": 5
+          }
+        },
+        "time_series": [
+          {
+            "timestamp": "2024-11-05T10:00:00Z",
+            "impressions": 1234,
+            "engagement": 89
+          },
+          {
+            "timestamp": "2024-11-05T11:00:00Z",
+            "impressions": 2345,
+            "engagement": 156
+          }
+        ]
+      }
+    ]
+  }
+  ```
+
+---
+
+##### Comment & Engagement Endpoints
+
+**GET /teams/:team_id/comments**
+- **Description:** List comments, mentions, and messages
+- **Authentication:** Bearer token required
+- **Authorization:** Team member
+- **Query Parameters:**
+  - `comment_type` (string: comment, reply, mention, direct_message)
+  - `reply_status` (string: pending, replied, ignored)
+  - `platform` (string: facebook, instagram, etc.)
+  - `limit`, `cursor` (pagination)
+- **Response (200 OK):**
+  ```json
+  {
+    "data": [
+      {
+        "id": "cmt_xyz123",
+        "post_social_account_id": "psa_abc001",
+        "platform": "instagram",
+        "comment_type": "comment",
+        "author_username": "happy_customer",
+        "author_name": "Happy Customer",
+        "content": "Love this product! When will it be back in stock?",
+        "sentiment": "positive",
+        "sentiment_score": 0.85,
+        "reply_status": "pending",
+        "created_at_platform": "2024-11-10T14:30:00Z"
+      }
+    ],
+    "pagination": {
+      "next_cursor": "cursor_abc",
+      "has_more": true
+    }
+  }
+  ```
+
+---
+
+**POST /teams/:team_id/comments/:comment_id/reply**
+- **Description:** Reply to a comment
+- **Authentication:** Bearer token required
+- **Authorization:** Team member with reply permission
+- **Request Body:**
+  ```json
+  {
+    "content": "Thanks for your interest! We'll have more stock next week. 😊"
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "id": "cmt_xyz123",
+    "reply_status": "replied",
+    "replied_at": "2024-11-10T17:00:00Z",
+    "reply_content": "Thanks for your interest! We'll have more stock next week. 😊"
+  }
+  ```
+
+---
+
+##### Content Library Endpoints
+
+**GET /teams/:team_id/content-library**
+- **Description:** List content library items
+- **Authentication:** Bearer token required
+- **Query Parameters:**
+  - `content_type` (media, template, caption, hashtag_set)
+  - `category` (string)
+  - `tags` (comma-separated)
+- **Response (200 OK):**
+  ```json
+  {
+    "data": [
+      {
+        "id": "cl_img001",
+        "content_type": "media",
+        "title": "Product Photo - Blue Widget",
+        "media_url": "https://cdn.platform.com/library/blue-widget.jpg",
+        "media_type": "image",
+        "thumbnail_url": "https://cdn.platform.com/library/blue-widget-thumb.jpg",
+        "tags": ["product", "widget", "blue"],
+        "usage_count": 12,
+        "created_at": "2024-09-15T10:00:00Z"
+      },
+      {
+        "id": "cl_tpl001",
+        "content_type": "template",
+        "title": "Product Launch Template",
+        "template_content": "🚀 Introducing {product_name}! Get {discount}% off today only. #NewProduct",
+        "variables": ["product_name", "discount"],
+        "usage_count": 8
+      }
+    ]
+  }
+  ```
+
+---
+
+**POST /teams/:team_id/content-library**
+- **Description:** Add item to content library
+- **Authentication:** Bearer token required
+- **Request Body (Media):**
+  ```json
+  {
+    "content_type": "media",
+    "title": "Holiday Banner 2024",
+    "media_url": "https://cdn.platform.com/uploads/holiday-banner.jpg",
+    "media_type": "image",
+    "tags": ["holiday", "banner", "2024"]
+  }
+  ```
+- **Request Body (Template):**
+  ```json
+  {
+    "content_type": "template",
+    "title": "Sale Announcement Template",
+    "template_content": "🎉 {event_name} Sale! Save {discount}% on {product_category}. Shop now: {link}",
+    "variables": ["event_name", "discount", "product_category", "link"],
+    "category": "promotions"
+  }
+  ```
+- **Response (201 Created):** Returns created content library object
+
+---
+
+### API Response Formats
+
+#### Success Response Structure
+
+```json
+{
+  "data": { ... },
+  "meta": {
+    "request_id": "req_xyz123abc",
+    "timestamp": "2024-11-10T17:00:00Z"
+  }
+}
+```
+
+#### Error Response Structure
+
+```json
+{
+  "error": {
+    "type": "validation_error",
+    "message": "Invalid input data",
+    "code": "INVALID_INPUT",
+    "details": [
+      {
+        "field": "email",
+        "message": "Email format is invalid"
+      },
+      {
+        "field": "scheduled_at",
+        "message": "Scheduled time must be in the future"
+      }
+    ]
+  },
+  "meta": {
+    "request_id": "req_error_789",
+    "timestamp": "2024-11-10T17:00:00Z"
+  }
+}
+```
+
+#### Pagination Response Structure
+
+```json
+{
+  "data": [ ... ],
+  "pagination": {
+    "next_cursor": "cursor_next_abc123",
+    "prev_cursor": "cursor_prev_xyz789",
+    "has_more": true,
+    "total_count": 450
+  }
+}
+```
+
+---
+
+### Rate Limiting
+
+**Rate Limit Headers:**
+```
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 987
+X-RateLimit-Reset: 1699567200
+```
+
+**Rate Limits by Tier:**
+
+| Tier | Requests/Hour | Requests/Day | Burst Limit |
+|------|---------------|--------------|-------------|
+| Free | 100 | 1,000 | 20/min |
+| Professional | 1,000 | 10,000 | 100/min |
+| Business | 5,000 | 100,000 | 500/min |
+| Enterprise | Custom | Custom | Custom |
+
+**Rate Limit Exceeded Response (429):**
+```json
+{
+  "error": {
+    "type": "rate_limit_error",
+    "message": "API rate limit exceeded",
+    "code": "RATE_LIMIT_EXCEEDED",
+    "retry_after": 3600
+  }
+}
+```
+
+---
+
+### Webhook Events
+
+**Webhook Endpoint Configuration:**
+- Teams can configure webhook URLs in settings
+- System sends POST requests to webhook URL when events occur
+- HMAC signature included in `X-Webhook-Signature` header for verification
+
+**Supported Events:**
+
+```json
+{
+  "event": "post.published",
+  "timestamp": "2024-11-10T17:00:00Z",
+  "data": {
+    "post_id": "post_abc123",
+    "team_id": "team_xyz123",
+    "status": "published",
+    "published_at": "2024-11-10T17:00:00Z",
+    "platforms": ["facebook", "instagram"]
+  }
+}
+```
+
+**Event Types:**
+- `post.published` - Post successfully published
+- `post.failed` - Post publishing failed
+- `post.approved` - Post approved by manager
+- `post.rejected` - Post rejected
+- `comment.received` - New comment on post
+- `mention.received` - Brand mentioned
+- `message.received` - New direct message
+- `social_account.disconnected` - Account token expired/revoked
+
+---
+
 This completes the comprehensive Technical Requirements and System Architecture section for the Social Media Management Platform PRD.
