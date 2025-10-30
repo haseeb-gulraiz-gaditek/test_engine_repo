@@ -3464,39 +3464,623 @@ This section defines the technical architecture, infrastructure requirements, te
 
 ---
 
-### Security Requirements
+### Security, Privacy, and Compliance Requirements
 
-**Data Encryption:**
-- **In Transit:** TLS 1.3 for all connections
-- **At Rest:** AES-256 encryption for database (RDS encryption), S3 encryption
-- **Tokens:** Access tokens encrypted with KMS before storage
+This section defines comprehensive security, privacy, and compliance requirements for the Social Media Management Platform. These requirements ensure data protection, regulatory compliance, and robust security controls to protect user data and maintain platform integrity.
 
-**Authentication & Authorization:**
-- **User Auth:** OAuth 2.0 + JWT tokens (15-minute expiry, sliding refresh)
-- **API Auth:** API keys (for integrations) + OAuth 2.0 (for user-based access)
-- **MFA:** Optional 2FA via TOTP (Google Authenticator, Authy)
-- **SSO:** SAML 2.0 for enterprise customers (Okta, Azure AD integration)
+---
 
-**RBAC (Role-Based Access Control):**
-- **Roles:** Owner, Admin, Manager, Editor, Viewer (per team)
-- **Permissions:** Granular permissions (publish, schedule, delete, approve, view analytics)
-- **Enforcement:** API-level authorization checks on every request
+#### 1. Data Encryption Requirements
 
-**Compliance:**
-- **GDPR:** Right to data export, deletion; consent management
-- **CCPA:** California consumer privacy rights
-- **SOC 2 Type II:** Annual audit (Year 2+)
-- **HIPAA:** Not required (no health data)
+**1.1 Encryption in Transit**
 
-**Rate Limiting & DDoS Protection:**
-- **API Rate Limits:** Per-user and per-IP rate limiting (Cloudflare + application-level)
-- **DDoS Protection:** Cloudflare (Layer 3/4 + Layer 7)
-- **WAF:** Cloudflare WAF rules for common attack vectors
+All data transmitted between clients, servers, and external services must be encrypted using industry-standard protocols:
 
-**Data Privacy:**
-- **PII Handling:** Minimal PII collection, encrypted storage, access logging
-- **Data Retention:** User data deleted within 30 days of account deletion
-- **Audit Logs:** All data access logged for security auditing
+- **TLS Version:** TLS 1.3 minimum for all HTTPS connections (TLS 1.2 acceptable for backward compatibility with explicit cipher suite restrictions)
+- **Cipher Suites:** Only strong cipher suites allowed (AEAD ciphers: AES-GCM, ChaCha20-Poly1305)
+- **Certificate Management:**
+  - SHA-256 or stronger signature algorithms
+  - 2048-bit RSA or 256-bit ECDSA minimum key lengths
+  - Certificate rotation every 12 months
+  - Certificate pinning for mobile applications
+  - Automated certificate renewal via Let's Encrypt or AWS Certificate Manager
+- **HSTS (HTTP Strict Transport Security):** Enabled with max-age of 31536000 seconds (1 year) and includeSubDomains directive
+- **WebSocket Connections:** Secure WebSocket (WSS) protocol only for real-time features
+- **API Endpoints:** All API endpoints accessible only via HTTPS; HTTP requests automatically redirected to HTTPS
+- **Third-Party API Calls:** All outbound API calls to social media platforms use HTTPS
+
+**1.2 Encryption at Rest**
+
+All sensitive data stored in databases, file systems, and backups must be encrypted:
+
+**Database Encryption:**
+- **Algorithm:** AES-256-GCM encryption for all database instances
+- **RDS/Aurora Encryption:** AWS RDS encryption enabled at the database instance level
+- **Key Management:** AWS KMS (Key Management Service) with automatic key rotation enabled
+- **Column-Level Encryption:** Additional encryption for highly sensitive fields:
+  - Social media access tokens and refresh tokens
+  - OAuth credentials and API keys
+  - MFA secrets (TOTP seeds)
+  - User password hashes (Bcrypt with cost factor 12+)
+  - Payment information (if stored, PCI-DSS compliant)
+- **Backup Encryption:** All automated and manual database backups encrypted with AES-256
+
+**File Storage Encryption:**
+- **S3 Bucket Encryption:** AES-256 server-side encryption (SSE-S3 or SSE-KMS) for all S3 buckets
+- **Media Assets:** User-uploaded images, videos, and files encrypted at rest
+- **Logs and Exports:** All log files and data export files encrypted
+
+**Application-Level Encryption:**
+- **Sensitive Configuration:** Environment variables containing secrets encrypted using AWS Secrets Manager or HashiCorp Vault
+- **API Keys:** Third-party API keys encrypted before storage in database using AWS KMS
+- **Customer-Managed Keys (CMK):** Enterprise customers can optionally provide their own encryption keys (BYOK - Bring Your Own Key)
+
+**1.3 Key Management**
+
+- **Key Rotation:** Encryption keys automatically rotated every 90 days
+- **Key Access Control:** Strict IAM policies limiting key access to authorized services only
+- **Key Auditing:** All key usage logged in CloudTrail/audit logs
+- **Key Backup:** Encrypted backups of encryption keys stored in geographically separated regions
+- **Key Deletion:** Minimum 30-day waiting period for key deletion requests
+
+---
+
+#### 2. Authentication and Authorization Security
+
+**2.1 User Authentication**
+
+**Password Requirements:**
+- **Minimum Length:** 12 characters
+- **Complexity Requirements:**
+  - At least one uppercase letter
+  - At least one lowercase letter
+  - At least one number
+  - At least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?)
+- **Password Strength Meter:** Real-time password strength indicator during registration/password reset
+- **Prohibited Passwords:** Block common passwords (top 10,000 leaked passwords) and dictionary words
+- **Password History:** Prevent reuse of last 5 passwords
+- **Password Expiration:** Optional password expiration policy (90-180 days) for enterprise customers
+- **Password Hashing:** Bcrypt algorithm with cost factor 12 minimum (automatically increased as hardware improves)
+
+**Multi-Factor Authentication (MFA):**
+- **TOTP (Time-Based One-Time Password):**
+  - Support for Google Authenticator, Authy, Microsoft Authenticator, 1Password
+  - 6-digit codes with 30-second validity window
+  - TOTP secrets encrypted at rest using AES-256
+- **SMS-Based MFA:** Optional SMS code delivery (with security warnings about SMS vulnerabilities)
+- **Backup Codes:** 10 single-use backup codes generated upon MFA setup
+- **MFA Enforcement:** Mandatory MFA for:
+  - All admin and owner roles
+  - Team members with publish permissions
+  - Users accessing sensitive analytics data
+  - Optional enforcement for all users (configurable per team)
+- **MFA Recovery:** Account recovery via backup codes or administrator-assisted recovery with identity verification
+
+**Session Management:**
+- **JWT Tokens:**
+  - Access token expiry: 15 minutes
+  - Refresh token expiry: 7 days (configurable: 1-30 days)
+  - Sliding refresh token rotation on use
+  - JWT signed with RS256 (RSA Signature with SHA-256)
+- **Session Invalidation:**
+  - Logout invalidates both access and refresh tokens
+  - Password change invalidates all existing sessions
+  - MFA disable/enable invalidates all sessions
+  - Manual "Logout All Devices" feature available
+- **Concurrent Session Limits:** Maximum 5 active sessions per user (configurable per team)
+- **Session Timeout:** Automatic session timeout after 30 minutes of inactivity (configurable: 10-120 minutes)
+- **Device Tracking:** Track active sessions with device type, browser, IP address, and last activity timestamp
+- **Suspicious Activity Detection:**
+  - Login from new device triggers email notification
+  - Login from new geographic location triggers verification challenge
+  - Multiple failed login attempts trigger account lockout
+
+**OAuth 2.0 and SSO:**
+- **OAuth 2.0 Flows:**
+  - Authorization Code Flow with PKCE (Proof Key for Code Exchange) for web and mobile apps
+  - Client Credentials Flow for server-to-server API access
+- **SSO (Single Sign-On) for Enterprise:**
+  - SAML 2.0 support for identity providers (Okta, Azure AD, OneLogin, Google Workspace)
+  - JIT (Just-In-Time) user provisioning
+  - SCIM 2.0 for automated user provisioning and deprovisioning
+  - Assertion signature validation using IdP public certificates
+- **Social Login:** Optional OAuth-based login via Google, Microsoft (disabled by default for security)
+
+**2.2 API Authentication**
+
+**API Key Authentication:**
+- **API Key Generation:** Cryptographically secure random keys (256-bit entropy)
+- **API Key Scopes:** Granular scopes limiting API key permissions (read-only, write, admin)
+- **API Key Rotation:** Automatic rotation reminders every 90 days; support for overlapping keys during rotation
+- **API Key Revocation:** Instant revocation capability with audit trail
+- **API Key Storage:** Keys hashed using SHA-256 before storage; only hash prefix shown in UI
+
+**OAuth 2.0 for Third-Party Integrations:**
+- **Scopes:** Clearly defined OAuth scopes (e.g., `posts:read`, `posts:write`, `analytics:read`)
+- **Token Expiry:** Short-lived access tokens (1 hour) with refresh token support
+- **Authorization Consent:** Explicit user consent required for each scope
+
+**2.3 Role-Based Access Control (RBAC)**
+
+**Team-Level Roles:**
+- **Owner:** Full control over team, billing, and all resources
+- **Admin:** Manage team members, settings, and all content operations
+- **Manager:** Approve posts, manage schedules, view analytics
+- **Editor:** Create and edit posts, manage content library
+- **Viewer:** Read-only access to posts and analytics
+
+**Granular Permissions:**
+- **Resource-Based Permissions:**
+  - Posts: create, read, update, delete, approve, publish, schedule
+  - Social Accounts: connect, disconnect, view credentials
+  - Analytics: view, export
+  - Team: invite members, remove members, change roles
+  - Billing: view invoices, update payment methods, change plans
+
+**Permission Enforcement:**
+- **API-Level Enforcement:** Every API request validates user permissions before execution
+- **Database-Level Enforcement:** Row-level security (RLS) policies in PostgreSQL
+- **UI-Level Enforcement:** Dynamic UI rendering based on user permissions
+- **Audit Trail:** All permission checks logged for security auditing
+
+**2.4 Account Lockout and Brute Force Protection**
+
+- **Failed Login Attempts:** Account temporarily locked after 5 failed login attempts within 15 minutes
+- **Lockout Duration:** 30-minute lockout period (exponential backoff for repeated lockouts)
+- **CAPTCHA:** Present CAPTCHA challenge after 3 failed login attempts
+- **IP-Based Rate Limiting:** Maximum 20 login attempts per IP address per hour
+- **Account Unlock:** Automatic unlock after lockout period, or manual unlock via email verification link
+
+---
+
+#### 3. Privacy Requirements and Data Protection
+
+**3.1 GDPR (General Data Protection Regulation) Compliance**
+
+**Legal Basis for Processing:**
+- **Consent:** Explicit consent obtained for marketing communications and analytics cookies
+- **Contract Performance:** Data processing necessary for service delivery
+- **Legitimate Interest:** Platform security, fraud prevention, and service improvement
+
+**Data Subject Rights:**
+- **Right to Access:** Users can download complete copy of their personal data in machine-readable JSON format
+- **Right to Rectification:** Users can update personal information via account settings
+- **Right to Erasure (Right to be Forgotten):**
+  - Account deletion feature with 30-day grace period
+  - Complete data deletion within 30 days of deletion request
+  - Anonymization of essential records (audit logs, billing records) instead of deletion where legally required
+- **Right to Data Portability:** Export user data in JSON or CSV format
+- **Right to Restriction of Processing:** Users can temporarily suspend data processing
+- **Right to Object:** Users can object to processing for direct marketing purposes
+
+**Data Processing Records:**
+- Maintain comprehensive Record of Processing Activities (ROPA)
+- Document data flows, processing purposes, legal bases, and retention periods
+- Annual review and update of processing records
+
+**Data Protection Impact Assessment (DPIA):**
+- Conduct DPIA for high-risk processing activities
+- Document risks and mitigation measures
+- Regular review of DPIA findings
+
+**Data Protection Officer (DPO):**
+- Appoint DPO responsible for GDPR compliance
+- DPO contact information published in privacy policy and platform footer
+- DPO oversees data breach response and regulatory communications
+
+**International Data Transfers:**
+- Standard Contractual Clauses (SCCs) for data transfers outside EU/EEA
+- Adequacy decisions respected (e.g., EU-US Data Privacy Framework if applicable)
+- Data localization options for enterprise customers (EU-only data residency)
+
+**3.2 CCPA (California Consumer Privacy Act) Compliance**
+
+**Consumer Rights:**
+- **Right to Know:** Disclose categories and specific pieces of personal information collected
+- **Right to Delete:** Honor deletion requests within 45 days (with 45-day extension if needed)
+- **Right to Opt-Out:** "Do Not Sell My Personal Information" link in footer (if applicable)
+- **Right to Non-Discrimination:** Equal service and pricing regardless of privacy rights exercise
+
+**CCPA Disclosures:**
+- Privacy policy clearly describes:
+  - Categories of personal information collected
+  - Sources of personal information
+  - Business/commercial purposes for collection
+  - Categories of third parties with whom data is shared
+- Annual disclosure of data collection and sharing practices
+
+**Verification Procedures:**
+- Two-step verification process for data access/deletion requests
+- Email verification for low-risk requests
+- Additional identity verification (ID upload) for high-risk requests
+
+**3.3 Data Minimization and Purpose Limitation**
+
+- **Minimal Data Collection:** Collect only data necessary for service delivery
+- **Purpose Specification:** Clearly define and document purpose for each data element collected
+- **Purpose Limitation:** Use data only for specified purposes; obtain new consent for new purposes
+- **Storage Limitation:** Delete or anonymize data when no longer needed for original purpose
+
+**3.4 Data Retention Policies**
+
+**User Account Data:**
+- Active accounts: Retained indefinitely while account is active
+- Deleted accounts: 30-day soft delete period, then permanent deletion
+- Inactive accounts: Accounts inactive for 3+ years may be deleted after email notification
+
+**Content and Posts:**
+- Draft posts: Retained until published or deleted by user
+- Published posts: Retained as long as associated social media accounts are connected
+- Deleted posts: Permanently deleted within 7 days
+
+**Analytics Data:**
+- Aggregated analytics: Retained for 3 years
+- Individual event logs: Retained for 13 months
+- Anonymized analytics: Retained indefinitely
+
+**Audit Logs:**
+- Security audit logs: Retained for 2 years
+- Access logs: Retained for 13 months
+- Anonymized logs: Retained for compliance and debugging purposes
+
+**Billing and Payment Data:**
+- Active subscriptions: Retained while subscription is active
+- Canceled subscriptions: Retained for 7 years for tax and legal compliance
+- Payment card information: Never stored (handled by payment processor)
+
+**Backup Data:**
+- Automated backups: Retained for 30 days
+- Compliance backups: Retained for 7 years (encrypted and access-restricted)
+
+**3.5 Cookie and Tracking Policies**
+
+**Cookie Consent:**
+- Cookie consent banner displayed on first visit
+- Granular consent options: Essential, Functional, Analytics, Marketing
+- Consent preferences stored and respected across sessions
+
+**Cookie Categories:**
+- **Essential Cookies:** Session management, authentication (no consent required)
+- **Functional Cookies:** User preferences, UI settings (optional)
+- **Analytics Cookies:** Google Analytics, Mixpanel (optional, anonymized IP)
+- **Marketing Cookies:** Third-party advertising pixels (optional)
+
+**Tracking Opt-Out:**
+- Respect Do Not Track (DNT) browser headers
+- Honor Global Privacy Control (GPC) signals
+- Provide cookie preference management in user settings
+
+---
+
+#### 4. Third-Party API Credentials Security
+
+**4.1 Social Media API Credentials Storage**
+
+**OAuth Token Management:**
+- **Token Encryption:** All OAuth access tokens and refresh tokens encrypted using AWS KMS before database storage
+- **Token Rotation:** Automatic refresh token rotation when possible (platform-dependent)
+- **Token Revocation:** Immediate token revocation upon social account disconnection
+- **Token Expiry Monitoring:** Monitor token expiry and trigger re-authentication when needed
+
+**Credential Isolation:**
+- **Per-Team Isolation:** Social account credentials isolated per team; no cross-team access
+- **Database-Level Isolation:** Row-level security (RLS) enforces credential access restrictions
+- **API-Level Validation:** Every API request validates user's permission to access specific social account credentials
+
+**4.2 Secrets Management**
+
+**Environment Variables and Configuration:**
+- **AWS Secrets Manager:** Store application secrets (database passwords, API keys, encryption keys)
+- **Automatic Rotation:** Secrets automatically rotated every 90 days where supported
+- **Access Control:** IAM policies restrict secret access to authorized services only
+- **Audit Logging:** All secret retrievals logged in CloudTrail
+
+**Application Configuration:**
+- **No Hardcoded Secrets:** No API keys, passwords, or tokens in source code
+- **Environment-Specific Secrets:** Separate secrets for development, staging, and production environments
+- **Secret Scanning:** Automated secret scanning in CI/CD pipeline (GitGuardian, TruffleHog)
+
+**4.3 Third-Party Service Security**
+
+**Vendor Security Assessment:**
+- Conduct security assessment of all third-party services (social media APIs, analytics providers, payment processors)
+- Verify SOC 2, ISO 27001, or equivalent certifications
+- Review vendor data processing agreements and privacy policies
+
+**API Key Management for External Services:**
+- **Service-Specific Keys:** Separate API keys for each external service (Stripe, SendGrid, AWS)
+- **Least Privilege Access:** Grant minimum necessary permissions to each API key
+- **Key Rotation:** Rotate external service API keys quarterly
+- **Revocation Procedures:** Documented procedures for emergency key revocation
+
+**4.4 Social Media Platform API Compliance**
+
+**Platform-Specific Security Requirements:**
+- **Facebook/Instagram API:**
+  - Store access tokens encrypted; never log tokens
+  - Comply with Facebook Platform Policy regarding data usage
+  - Implement token refresh before expiration
+- **Twitter/X API:**
+  - Protect OAuth 1.0a secrets; never expose in client-side code
+  - Respect rate limits and implement exponential backoff
+- **LinkedIn API:**
+  - Implement OAuth 2.0 authorization code flow
+  - Refresh access tokens every 60 days
+- **TikTok API:**
+  - Comply with TikTok Developer Policy
+  - Implement webhook signature verification
+- **YouTube API:**
+  - Store OAuth credentials securely per Google API Terms
+  - Implement incremental authorization for sensitive scopes
+
+**Webhook Security:**
+- **Signature Verification:** Verify webhook signatures from social media platforms using HMAC-SHA256
+- **Replay Attack Prevention:** Implement timestamp validation (reject webhooks older than 5 minutes)
+- **HTTPS Only:** Webhook endpoints accessible only via HTTPS
+
+---
+
+#### 5. Audit Logging and Monitoring Requirements
+
+**5.1 Comprehensive Audit Logging**
+
+**User Activity Logs:**
+- **Authentication Events:**
+  - Login/logout (timestamp, IP address, user agent, success/failure)
+  - MFA enable/disable
+  - Password change/reset
+  - Session creation/invalidation
+- **Authorization Events:**
+  - Permission changes (role assignments, permission grants)
+  - Team membership changes (invitations, joins, removals)
+  - Access denied events (attempted unauthorized actions)
+- **Data Access Events:**
+  - Personal data access (who accessed whose data)
+  - Data export requests
+  - Data deletion requests
+- **Content Operations:**
+  - Post creation, publication, deletion
+  - Social account connection/disconnection
+  - Schedule creation/modification
+
+**Administrative Actions:**
+- Team settings changes
+- Billing and subscription changes
+- Integration configurations
+- Security settings modifications
+- User account suspensions/deletions
+
+**Security Events:**
+- Failed login attempts
+- Account lockouts
+- Suspicious activity detections
+- API key generation/revocation
+- Encryption key usage
+
+**System Events:**
+- Application errors and exceptions
+- API rate limit violations
+- Third-party API failures
+- Database connection issues
+- Service availability changes
+
+**5.2 Audit Log Format and Storage**
+
+**Log Format:**
+```json
+{
+  "timestamp": "2025-10-30T14:32:10.123Z",
+  "event_id": "evt_abc123xyz",
+  "event_type": "user.login.success",
+  "actor": {
+    "user_id": "usr_123",
+    "email": "user@example.com",
+    "ip_address": "203.0.113.42",
+    "user_agent": "Mozilla/5.0..."
+  },
+  "resource": {
+    "type": "session",
+    "id": "sess_xyz789"
+  },
+  "metadata": {
+    "mfa_used": true,
+    "session_duration": 3600
+  }
+}
+```
+
+**Log Storage:**
+- **Centralized Logging:** All logs aggregated in centralized logging service (AWS CloudWatch, Datadog, Splunk)
+- **Log Retention:** Security logs retained for 2 years; operational logs for 13 months
+- **Log Encryption:** All logs encrypted at rest (AES-256)
+- **Log Immutability:** Use append-only log storage to prevent tampering
+- **Log Backup:** Daily backups of audit logs to separate storage
+
+**5.3 Security Monitoring and Alerting**
+
+**Real-Time Security Monitoring:**
+- **SIEM Integration:** Security Information and Event Management system monitors logs in real-time
+- **Anomaly Detection:**
+  - Unusual login patterns (geographic anomalies, velocity checks)
+  - Abnormal API usage patterns
+  - Unexpected permission escalations
+  - Bulk data access or export operations
+- **Threat Intelligence:** Integration with threat intelligence feeds for IP reputation checks
+
+**Automated Alerting:**
+- **Critical Alerts (Immediate Notification):**
+  - Multiple failed login attempts from same IP
+  - Admin account compromised indicators
+  - Unauthorized access to sensitive data
+  - Encryption key access anomalies
+  - Critical system errors or outages
+- **High-Priority Alerts (15-minute SLA):**
+  - Repeated authorization failures
+  - Unusual data export volumes
+  - API rate limit violations
+  - Third-party API authentication failures
+- **Medium-Priority Alerts (1-hour SLA):**
+  - Failed backup jobs
+  - Performance degradation
+  - Non-critical system errors
+
+**Alert Channels:**
+- PagerDuty for critical security incidents (24/7 on-call rotation)
+- Slack/Email for high and medium priority alerts
+- Weekly security digest reports
+
+**5.4 Compliance Monitoring**
+
+**Regulatory Compliance Checks:**
+- Automated checks for GDPR/CCPA compliance:
+  - Data retention policy enforcement
+  - Consent management validation
+  - Data subject rights request tracking
+- SOC 2 control validation:
+  - Access control reviews
+  - Encryption verification
+  - Change management compliance
+
+**Audit Reports:**
+- **Weekly Security Reports:**
+  - Failed login attempt summary
+  - Permission change log
+  - Suspicious activity review
+- **Monthly Compliance Reports:**
+  - Data subject rights requests handled
+  - Data breaches or security incidents
+  - Vendor security assessment status
+- **Quarterly Security Reviews:**
+  - Access control review (user permissions audit)
+  - Encryption key rotation status
+  - Third-party security assessment updates
+  - Incident response plan testing
+
+**5.5 Incident Response and Security Operations**
+
+**Incident Detection:**
+- 24/7 security monitoring for critical systems
+- Automated incident detection using SIEM rules
+- Bug bounty program for external security researchers
+
+**Incident Response Plan:**
+1. **Detection and Analysis:** Identify and assess security incident severity
+2. **Containment:** Isolate affected systems; prevent lateral movement
+3. **Eradication:** Remove threat; patch vulnerabilities
+4. **Recovery:** Restore systems from clean backups; verify integrity
+5. **Post-Incident Review:** Document lessons learned; update security controls
+
+**Incident Severity Levels:**
+- **Critical (P0):** Data breach, system compromise, service outage
+- **High (P1):** Attempted breach, vulnerability exploitation, significant security control failure
+- **Medium (P2):** Policy violations, minor security issues
+- **Low (P3):** Informational security findings
+
+**Data Breach Notification:**
+- **Internal Notification:** Immediate notification to security team, legal, and executive leadership
+- **User Notification:** Notify affected users within 72 hours (GDPR requirement)
+- **Regulatory Notification:** Notify relevant data protection authorities within 72 hours (GDPR requirement)
+- **Breach Documentation:** Document breach details, impact assessment, and remediation steps
+
+**Security Incident Metrics:**
+- Mean Time to Detect (MTTD): Target < 15 minutes for critical incidents
+- Mean Time to Respond (MTTR): Target < 1 hour for critical incidents
+- Incident volume trends and root cause analysis
+- False positive rate for automated alerts
+
+---
+
+#### 6. Additional Security Controls
+
+**6.1 Rate Limiting and DDoS Protection**
+
+**API Rate Limits:**
+- **Per-User Rate Limits:**
+  - Free tier: 100 requests/minute
+  - Professional tier: 500 requests/minute
+  - Business/Enterprise tier: 2,000 requests/minute
+- **Per-IP Rate Limits:** 1,000 requests/minute per IP address (global)
+- **Endpoint-Specific Limits:**
+  - Login endpoint: 5 requests/minute per IP
+  - Password reset: 3 requests/15 minutes per email
+  - Data export: 1 request/hour per user
+
+**Rate Limit Responses:**
+- HTTP 429 (Too Many Requests) with Retry-After header
+- Rate limit headers in all API responses (X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset)
+
+**DDoS Protection:**
+- **Cloudflare Protection:** Layer 3/4 and Layer 7 DDoS protection
+- **WAF Rules:** Cloudflare WAF rules for SQL injection, XSS, CSRF protection
+- **Origin Shield:** Hide origin server IPs; all traffic routed through CDN
+
+**6.2 Vulnerability Management**
+
+**Dependency Scanning:**
+- Automated dependency vulnerability scanning (Snyk, Dependabot)
+- Weekly scans of all dependencies (backend, frontend, mobile)
+- Critical vulnerability patches deployed within 24 hours
+
+**Code Security Analysis:**
+- Static Application Security Testing (SAST) in CI/CD pipeline
+- Dynamic Application Security Testing (DAST) in staging environment
+- Regular penetration testing (quarterly for critical systems)
+
+**Security Patch Management:**
+- Critical security patches: Deployed within 24 hours
+- High-priority patches: Deployed within 7 days
+- Medium/low priority patches: Deployed within 30 days
+
+**6.3 Secure Development Lifecycle**
+
+**Security Training:**
+- Annual security awareness training for all employees
+- Secure coding training for all developers
+- Phishing simulation exercises quarterly
+
+**Code Review:**
+- Mandatory peer code review for all changes
+- Security-focused code review for authentication, authorization, and data handling code
+- Security checklist for pull requests
+
+**Security Testing:**
+- Unit tests for authentication and authorization logic
+- Integration tests for API security controls
+- End-to-end tests for critical security flows (login, MFA, password reset)
+
+---
+
+#### 7. Compliance Certifications and Standards
+
+**7.1 Target Certifications**
+
+**SOC 2 Type II:**
+- Target completion: Year 2 post-launch
+- Annual audit by certified CPA firm
+- Trust Services Criteria: Security, Availability, Confidentiality
+
+**ISO 27001:**
+- Information Security Management System (ISMS) certification
+- Target completion: Year 2-3 post-launch
+- Annual surveillance audits
+
+**7.2 Security Frameworks**
+
+**NIST Cybersecurity Framework:**
+- Align security controls with NIST CSF (Identify, Protect, Detect, Respond, Recover)
+- Annual gap assessment and remediation
+
+**OWASP Top 10:**
+- Address all OWASP Top 10 vulnerabilities in application design
+- Regular OWASP Top 10 assessment as part of penetration testing
+
+**CIS Controls:**
+- Implement CIS Critical Security Controls (prioritize controls 1-8)
+- Annual CIS Controls assessment
+
+---
+
+This comprehensive security, privacy, and compliance framework ensures that the Social Media Management Platform meets industry best practices and regulatory requirements while protecting user data and maintaining platform integrity. Regular reviews and updates of these requirements will be conducted to address evolving threats and regulatory changes.
 
 ---
 
