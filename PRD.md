@@ -2691,4 +2691,813 @@ This section provides detailed user stories for each major feature using the sta
 
 ---
 
-This completes the comprehensive user stories, use cases, acceptance criteria, and edge case documentation for the Social Media Management Platform PRD.
+## Technical Requirements and System Architecture
+
+### Overview
+
+This section defines the technical architecture, infrastructure requirements, technology stack, and system specifications necessary to build a scalable, reliable, and performant Social Media Management Platform capable of serving small businesses through enterprise organizations.
+
+---
+
+### System Architecture
+
+#### High-Level Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        CLIENT LAYER                              │
+├─────────────────────────────────────────────────────────────────┤
+│  Web App (React)  │  iOS Native  │  Android Native  │  Browser   │
+│  Progressive Web  │    Swift     │     Kotlin       │  Extension │
+└──────────────┬────────────────────────────────────┬──────────────┘
+               │                                    │
+               ▼                                    ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      API GATEWAY LAYER                           │
+├─────────────────────────────────────────────────────────────────┤
+│  • Request routing & load balancing                              │
+│  • Authentication & authorization (JWT/OAuth 2.0)                │
+│  • Rate limiting & throttling                                    │
+│  • API versioning (v1, v2)                                       │
+│  • Request/response transformation                               │
+│  • SSL/TLS termination                                           │
+└──────────────┬──────────────────────────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   APPLICATION SERVICES LAYER                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐            │
+│  │   Content   │  │  Analytics  │  │  Engagement  │            │
+│  │  Publishing │  │   Service   │  │    Service   │            │
+│  │   Service   │  │             │  │              │            │
+│  └─────────────┘  └─────────────┘  └──────────────┘            │
+│                                                                   │
+│  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐            │
+│  │Scheduling & │  │    Team &   │  │    Media     │            │
+│  │  Calendar   │  │Collaboration│  │  Management  │            │
+│  │  Service    │  │   Service   │  │   Service    │            │
+│  └─────────────┘  └─────────────┘  └──────────────┘            │
+│                                                                   │
+│  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐            │
+│  │    User     │  │Notification │  │   Billing &  │            │
+│  │ Management  │  │   Service   │  │ Subscription │            │
+│  │   Service   │  │             │  │   Service    │            │
+│  └─────────────┘  └─────────────┘  └──────────────┘            │
+│                                                                   │
+└──────────────┬──────────────────────────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  BACKGROUND PROCESSING LAYER                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐            │
+│  │  Scheduled  │  │   Social    │  │   Analytics  │            │
+│  │ Publishing  │  │   Media     │  │    Data      │            │
+│  │   Workers   │  │   Sync      │  │  Processing  │            │
+│  │             │  │   Workers   │  │   Workers    │            │
+│  └─────────────┘  └─────────────┘  └──────────────┘            │
+│                                                                   │
+│  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐            │
+│  │   Webhook   │  │    Email    │  │     AI/ML    │            │
+│  │  Processor  │  │   Service   │  │   Content    │            │
+│  │   Workers   │  │   Workers   │  │  Suggestion  │            │
+│  └─────────────┘  └─────────────┘  └──────────────┘            │
+│                                                                   │
+└──────────────┬──────────────────────────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      DATA LAYER                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ┌──────────────┐  ┌───────────┐  ┌──────────────┐             │
+│  │  PostgreSQL  │  │   Redis   │  │  TimescaleDB │             │
+│  │   Primary    │  │   Cache   │  │   Analytics  │             │
+│  │   Database   │  │   Session │  │  Time-Series │             │
+│  │              │  │   Queue   │  │     Data     │             │
+│  └──────────────┘  └───────────┘  └──────────────┘             │
+│                                                                   │
+│  ┌──────────────┐  ┌───────────┐  ┌──────────────┐             │
+│  │ Elasticsearch│  │   S3 /    │  │   Message    │             │
+│  │  Full-Text   │  │  Object   │  │    Queue     │             │
+│  │    Search    │  │  Storage  │  │(RabbitMQ/SQS)│             │
+│  └──────────────┘  └───────────┘  └──────────────┘             │
+│                                                                   │
+└──────────────┬──────────────────────────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                 EXTERNAL INTEGRATIONS LAYER                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  Social Media APIs:                                              │
+│  • Facebook Graph API  • Instagram Graph API                     │
+│  • Twitter/X API v2    • LinkedIn API                            │
+│  • TikTok API          • Pinterest API                           │
+│  • YouTube Data API                                              │
+│                                                                   │
+│  Third-Party Services:                                           │
+│  • Stripe (Payments)   • SendGrid (Email)                        │
+│  • Twilio (SMS)        • Auth0 (Identity)                        │
+│  • Cloudflare (CDN)    • DataDog (Monitoring)                    │
+│  • OpenAI (AI Content) • Webhooks (Integrations)                 │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Architecture Patterns
+
+**Microservices Architecture:**
+- Loosely coupled, independently deployable services
+- Each service owns its data domain
+- Inter-service communication via REST APIs and message queues
+- Enables independent scaling and technology choices per service
+
+**Event-Driven Architecture:**
+- Services publish events to message queues (RabbitMQ/AWS SQS)
+- Asynchronous processing for scheduled publishing, webhooks, analytics
+- Enables real-time notifications and data synchronization
+- Decouples producers and consumers for better scalability
+
+**API-First Design:**
+- All functionality exposed via RESTful APIs
+- OpenAPI/Swagger documentation
+- Enables multi-client support (web, mobile, integrations)
+- Versioned APIs for backward compatibility
+
+**Database Per Service Pattern:**
+- Each microservice manages its own database
+- Prevents tight coupling between services
+- Enables independent scaling and optimization
+- Data consistency via event-driven synchronization
+
+---
+
+### Technology Stack Recommendations
+
+#### Frontend Technologies
+
+**Web Application:**
+- **Framework:** Next.js 15+ with React 19
+  - **Rationale:** Server-side rendering (SSR) for SEO, performance, and initial page load speed; React Server Components for efficient data fetching; built-in API routes for backend integration
+- **Language:** TypeScript 5.x
+  - **Rationale:** Type safety reduces bugs, improves maintainability, enhances developer productivity with IDE autocomplete
+- **Styling:** Tailwind CSS 4.x
+  - **Rationale:** Utility-first CSS framework for rapid UI development, consistent design system, small bundle sizes with purging
+- **State Management:** Zustand + React Query (TanStack Query)
+  - **Rationale:** Zustand for global UI state (lightweight, simple API); React Query for server state management (caching, background updates, optimistic updates)
+- **UI Component Library:** Radix UI + Shadcn/ui
+  - **Rationale:** Unstyled, accessible components (WCAG 2.1 AA); full customization with Tailwind; tree-shakeable
+- **Data Visualization:** Recharts + D3.js
+  - **Rationale:** Recharts for standard charts (easy to use, responsive); D3.js for advanced custom visualizations
+- **Rich Text Editor:** Lexical (Meta's editor framework)
+  - **Rationale:** Modern, extensible, framework-agnostic; excellent performance; collaborative editing support
+- **Date/Time:** date-fns + date-fns-tz
+  - **Rationale:** Lightweight, modular, tree-shakeable; excellent timezone support
+- **Form Management:** React Hook Form + Zod
+  - **Rationale:** Performant with minimal re-renders; Zod for type-safe schema validation
+- **Drag & Drop:** @dnd-kit
+  - **Rationale:** Modern, accessible, performant; excellent for calendar and content organization
+
+**Mobile Applications:**
+
+**iOS Native:**
+- **Language:** Swift 5.x
+- **UI Framework:** SwiftUI
+- **Architecture:** MVVM (Model-View-ViewModel)
+- **Networking:** URLSession + Combine
+- **Local Storage:** Core Data + SwiftData
+
+**Android Native:**
+- **Language:** Kotlin 2.x
+- **UI Framework:** Jetpack Compose
+- **Architecture:** MVVM with ViewModel + LiveData/Flow
+- **Networking:** Retrofit + OkHttp + Coroutines
+- **Local Storage:** Room Database
+
+**Cross-Platform Alternative (Future):**
+- **Framework:** React Native or Flutter
+  - **Rationale:** Code reuse between iOS/Android; faster time-to-market; native performance with Hermes (React Native) or compiled Dart (Flutter)
+
+**Browser Extension:**
+- **Framework:** Plasmo (modern extension framework)
+- **Technology:** React + TypeScript
+- **Manifest:** Manifest V3 (Chrome, Edge, Firefox support)
+
+#### Backend Technologies
+
+**API Gateway:**
+- **Technology:** Kong Gateway or AWS API Gateway
+  - **Rationale:** Centralized authentication, rate limiting, routing; plugin ecosystem; scalability
+- **Alternative:** Nginx + custom middleware
+
+**Application Services:**
+- **Language:** Node.js (TypeScript) + Python
+  - **Node.js/TypeScript:** API services, real-time features, content management (fast I/O, JavaScript/TypeScript code sharing with frontend)
+  - **Python:** Analytics processing, ML/AI features, data-heavy operations (rich data science ecosystem, pandas, NumPy, scikit-learn)
+- **Framework (Node.js):** NestJS
+  - **Rationale:** Enterprise-grade architecture, built-in dependency injection, TypeScript-first, modular design, excellent for microservices
+- **Framework (Python):** FastAPI
+  - **Rationale:** High performance (async), automatic OpenAPI docs, type hints, excellent for AI/ML integration
+
+**Background Processing:**
+- **Job Queue:** BullMQ (Redis-based) or AWS SQS + Lambda
+  - **Rationale:** Reliable job processing, priority queues, delayed jobs, retry mechanisms, job monitoring
+- **Worker Framework:** BullMQ workers (Node.js) or Celery (Python)
+- **Scheduler:** Node-cron or AWS EventBridge
+
+**Real-Time Communication:**
+- **Technology:** Socket.io or WebSockets (native)
+  - **Rationale:** Real-time notifications, collaborative editing, live analytics updates
+- **Alternative:** Server-Sent Events (SSE) for one-way updates
+
+#### Data Layer
+
+**Primary Database:**
+- **Technology:** PostgreSQL 16+
+  - **Rationale:** ACID compliance, JSON support, full-text search, robust indexing, excellent for relational data (users, posts, teams, permissions)
+- **Scale:** Primary-replica setup for read scalability
+- **Extensions:** pg_trgm (fuzzy search), pg_stat_statements (query performance)
+
+**Time-Series Database:**
+- **Technology:** TimescaleDB (PostgreSQL extension)
+  - **Rationale:** Built on PostgreSQL, SQL interface, automatic partitioning, optimized for analytics data (post metrics over time, engagement trends)
+- **Alternative:** InfluxDB for high-volume metrics
+
+**Caching Layer:**
+- **Technology:** Redis 7.x
+  - **Rationale:** Sub-millisecond latency, supports complex data structures (lists, sets, sorted sets), pub/sub for real-time features
+- **Use Cases:** Session storage, API response caching, rate limiting counters, real-time analytics
+
+**Search Engine:**
+- **Technology:** Elasticsearch 8.x or Meilisearch
+  - **Rationale:** Full-text search for content, posts, conversations; fuzzy matching, highlighting, faceted search
+- **Alternative:** PostgreSQL full-text search for simpler use cases
+
+**Object Storage:**
+- **Technology:** AWS S3 or Cloudflare R2
+  - **Rationale:** Scalable media storage (images, videos), CDN integration, cost-effective
+- **CDN:** CloudFront (AWS) or Cloudflare CDN for fast global delivery
+
+**Message Queue:**
+- **Technology:** RabbitMQ or AWS SQS
+  - **Rationale:** Reliable message delivery, routing patterns (topic, fanout), dead-letter queues
+
+#### DevOps & Infrastructure
+
+**Containerization:**
+- **Technology:** Docker + Docker Compose (development)
+- **Orchestration:** Kubernetes (production) or AWS ECS/Fargate
+  - **Rationale:** Container orchestration, auto-scaling, self-healing, rolling deployments
+
+**Cloud Provider:**
+- **Primary:** AWS (Amazon Web Services)
+  - **Services:** EC2/ECS, RDS (PostgreSQL), ElastiCache (Redis), S3, Lambda, SQS, CloudFront
+  - **Rationale:** Comprehensive service ecosystem, global infrastructure, mature tooling
+- **Alternative:** Google Cloud Platform (GCP) or Microsoft Azure
+- **Multi-Cloud Strategy:** Cloudflare (CDN, DDoS protection, edge functions)
+
+**Infrastructure as Code:**
+- **Technology:** Terraform or AWS CDK
+  - **Rationale:** Version-controlled infrastructure, reproducible environments, automated provisioning
+
+**CI/CD Pipeline:**
+- **Technology:** GitHub Actions or GitLab CI/CD
+- **Stages:** Lint → Test → Build → Deploy (staging) → Deploy (production)
+- **Testing:** Jest (unit), Playwright (E2E), Postman/Newman (API)
+
+**Monitoring & Observability:**
+- **APM:** Datadog or New Relic
+  - **Metrics:** API latency, error rates, throughput, resource utilization
+- **Logging:** Datadog Logs or ELK Stack (Elasticsearch, Logstash, Kibana)
+- **Error Tracking:** Sentry
+- **Uptime Monitoring:** Pingdom or UptimeRobot
+
+**Security:**
+- **Authentication:** Auth0 or AWS Cognito (OAuth 2.0, SAML, SSO)
+- **Secrets Management:** AWS Secrets Manager or HashiCorp Vault
+- **SSL/TLS:** Let's Encrypt + Cloudflare
+- **DDoS Protection:** Cloudflare
+- **WAF:** Cloudflare WAF or AWS WAF
+
+---
+
+### Scalability Requirements
+
+#### User Scale Targets
+
+**Year 1:**
+- **Users:** 10,000 - 50,000 monthly active users (MAU)
+- **Teams:** 2,000 - 10,000 teams
+- **Posts:** 500,000 - 2,000,000 posts published/month
+- **API Requests:** 50M - 200M requests/month
+
+**Year 3:**
+- **Users:** 500,000 - 1,000,000 MAU
+- **Teams:** 100,000 - 200,000 teams
+- **Posts:** 50M - 100M posts published/month
+- **API Requests:** 5B - 10B requests/month
+
+**Year 5 (Enterprise Scale):**
+- **Users:** 5,000,000+ MAU
+- **Teams:** 1,000,000+ teams
+- **Posts:** 500M+ posts published/month
+- **API Requests:** 50B+ requests/month
+
+#### Horizontal Scaling Strategy
+
+**Application Layer:**
+- **Auto-scaling:** Kubernetes Horizontal Pod Autoscaler (HPA) based on CPU/memory/custom metrics
+- **Load Balancing:** Application Load Balancer (ALB) distributes traffic across instances
+- **Stateless Services:** All API services designed to be stateless; enables seamless scaling
+- **Target:** Scale from 5 instances → 100+ instances automatically based on demand
+
+**Database Layer:**
+- **Read Replicas:** 3-5 read replicas for PostgreSQL to distribute read traffic
+- **Connection Pooling:** PgBouncer to manage database connections efficiently (10,000+ concurrent connections)
+- **Sharding Strategy (Future):** Shard by team_id or user_id for multi-tenant isolation at scale
+- **Caching:** Redis cluster (3-5 nodes) for distributed caching; 90% cache hit rate target
+
+**Background Processing:**
+- **Worker Scaling:** Auto-scale worker instances based on queue depth
+  - Target: Process 10,000 scheduled posts/minute at peak
+  - Workers scale from 10 → 1,000+ instances
+- **Priority Queues:** Separate queues for critical (publishing) vs non-critical (analytics) tasks
+
+**Media Storage:**
+- **CDN:** Global CDN with 200+ edge locations for media delivery
+- **Multi-Region:** Store media in multiple S3 regions for redundancy and low-latency access
+- **Compression:** Automatic image optimization (WebP, AVIF formats); lazy loading
+
+#### Vertical Scaling Strategy
+
+**Database Sizing (Progressive):**
+- **Tier 1 (Year 1):** db.r6g.xlarge (4 vCPU, 32GB RAM) - ~50GB data
+- **Tier 2 (Year 3):** db.r6g.4xlarge (16 vCPU, 128GB RAM) - ~500GB data
+- **Tier 3 (Year 5):** db.r6g.16xlarge (64 vCPU, 512GB RAM) - ~5TB data
+
+**Cache Sizing:**
+- **Tier 1:** cache.r6g.large (2 vCPU, 13GB RAM)
+- **Tier 2:** cache.r6g.2xlarge (8 vCPU, 52GB RAM)
+- **Tier 3:** cache.r6g.8xlarge (32 vCPU, 208GB RAM)
+
+#### Performance Benchmarks
+
+**API Response Times (p95):**
+- **Authentication:** < 200ms
+- **Content fetch (feed, calendar):** < 500ms
+- **Post creation/editing:** < 300ms
+- **Analytics dashboard load:** < 1.5s
+- **Search queries:** < 400ms
+- **Media upload (5MB image):** < 2s
+
+**Scheduled Publishing:**
+- **Accuracy:** Posts publish within ±30 seconds of scheduled time (99.5% of the time)
+- **Throughput:** 10,000 posts published per minute at peak
+- **Retry Success Rate:** 95% of failed posts succeed on first retry
+
+**Real-Time Features:**
+- **Notification Delivery:** < 5 seconds from event to user notification
+- **Webhook Processing:** < 2 seconds from social platform webhook to system update
+- **Collaborative Editing:** < 100ms latency for cursor/change synchronization
+
+**Database Performance:**
+- **Query Performance:** 95% of queries < 100ms, 99% < 500ms
+- **Write Throughput:** 10,000 writes/second sustained
+- **Read Throughput:** 100,000 reads/second (with caching)
+
+**Uptime & Reliability:**
+- **SLA Target:** 99.9% uptime (43 minutes downtime/month max)
+- **Stretch Goal:** 99.95% uptime for enterprise tier
+- **Data Durability:** 99.999999999% (11 nines) via S3, RDS multi-AZ
+
+**Caching Performance:**
+- **Cache Hit Rate:** 90%+ for frequently accessed data (user profiles, team settings, recent posts)
+- **Cache Latency:** < 5ms (p95)
+
+---
+
+### Social Media Platform API Integrations
+
+#### Supported Platforms (Phase 1)
+
+**1. Instagram Graph API**
+
+**Integration Scope:**
+- **Publishing:** Photo posts, carousel posts, stories, reels
+- **Analytics:** Reach, impressions, engagement, follower growth, demographics
+- **Engagement:** Comments, mentions, direct messages (requires Instagram Business/Creator account)
+
+**API Specifications:**
+- **Endpoint:** `https://graph.instagram.com/v19.0/`
+- **Authentication:** OAuth 2.0 (Facebook Login)
+- **Permissions Required:**
+  - `instagram_basic`
+  - `instagram_content_publish`
+  - `instagram_manage_comments`
+  - `instagram_manage_messages` (DMs)
+  - `pages_read_engagement`
+- **Rate Limits:** 200 calls/hour per user (Tier 1); higher with app review
+- **Token Expiration:** 60-day access tokens (must refresh)
+- **Webhooks:** Real-time updates for comments, mentions, messages
+
+**Implementation Requirements:**
+- Support for Instagram Business and Creator accounts only (Personal accounts not supported by API)
+- Handle aspect ratio requirements (1:1, 4:5, 9:16)
+- Media validation: file size limits (8MB photos, 100MB videos)
+- Content Publishing API container flow (upload → create container → publish)
+- Story publishing with interactive elements (polls, questions, countdowns)
+
+**2. Facebook Graph API**
+
+**Integration Scope:**
+- **Publishing:** Text posts, photo/video posts, link posts, carousel ads
+- **Analytics:** Post reach, engagement, page insights, audience demographics
+- **Engagement:** Comments, reactions, messages (Page Inbox)
+
+**API Specifications:**
+- **Endpoint:** `https://graph.facebook.com/v19.0/`
+- **Authentication:** OAuth 2.0
+- **Permissions Required:**
+  - `pages_manage_posts`
+  - `pages_read_engagement`
+  - `pages_manage_metadata`
+  - `pages_messaging` (Messenger)
+- **Rate Limits:** 200 calls/hour per user (default); app-level rate limits apply
+- **Token Expiration:** 60-day access tokens; long-lived page tokens available
+- **Webhooks:** Real-time updates for feed, comments, messages, mentions
+
+**Implementation Requirements:**
+- Support Facebook Pages (not personal profiles)
+- Handle link preview scraping and Open Graph tags
+- Support video uploads with resumable upload for large files (> 10MB)
+- Implement scheduled publishing via `scheduled_publish_time` parameter
+- Handle content restrictions (link posts, video length limits)
+
+**3. LinkedIn API v2**
+
+**Integration Scope:**
+- **Publishing:** Text posts, article posts, image posts, video posts, document posts
+- **Analytics:** Impressions, clicks, engagement, follower demographics
+- **Company Pages:** Post to organization pages, employee advocacy
+
+**API Specifications:**
+- **Endpoint:** `https://api.linkedin.com/v2/`
+- **Authentication:** OAuth 2.0 (3-legged)
+- **Permissions Required:**
+  - `w_member_social` (post as member)
+  - `r_organization_social` (read company analytics)
+  - `w_organization_social` (post as organization)
+- **Rate Limits:** 500 requests/day per member; 100,000/day per app
+- **Token Expiration:** 60-day access tokens
+- **Webhooks:** Not available for most social actions
+
+**Implementation Requirements:**
+- Support both personal profiles and organization pages
+- Handle rich media uploads (images, videos, documents)
+- Support article posts with thumbnail customization
+- Maximum post length: 3,000 characters
+- Video requirements: MP4 format, max 5GB, 75MB-200MB recommended
+
+**4. Twitter/X API v2**
+
+**Integration Scope:**
+- **Publishing:** Text tweets, tweets with media (images, videos, GIFs), polls, threads
+- **Analytics:** Impressions, engagement rate, profile visits, follower growth
+- **Engagement:** Replies, mentions, direct messages
+
+**API Specifications:**
+- **Endpoint:** `https://api.twitter.com/2/`
+- **Authentication:** OAuth 2.0 or OAuth 1.0a
+- **Access Tiers:**
+  - **Free:** 1,500 tweets/month, 50 tweets/day (read-only)
+  - **Basic ($100/month):** 3,000 tweets/month, 100 tweets/day, limited read
+  - **Pro ($5,000/month):** 300,000 tweets/month, unlimited publishing
+  - **Enterprise:** Custom pricing, full access
+- **Rate Limits (Pro Tier):** 300 tweets/15 min window
+- **Character Limit:** 280 characters (4,000 for Twitter Blue subscribers)
+- **Webhooks:** Account Activity API for real-time events (Enterprise/Pro)
+
+**Implementation Requirements:**
+- Require Basic tier or higher for publishing
+- Support media uploads (up to 4 images or 1 video/GIF per tweet)
+- Thread creation with automatic chaining
+- Poll creation (up to 4 options, 7-day duration)
+- Handle rate limits gracefully with queuing
+- Character counting: account for URL shortening (all URLs = 23 chars)
+
+**5. TikTok for Business API**
+
+**Integration Scope:**
+- **Publishing:** Video posts with captions, hashtags, music
+- **Analytics:** Video views, engagement, audience demographics, trending sounds
+- **Content Management:** Draft management, video editing
+
+**API Specifications:**
+- **Endpoint:** `https://business-api.tiktok.com/open_api/v1.3/`
+- **Authentication:** OAuth 2.0
+- **Permissions Required:**
+  - `video.upload`
+  - `video.publish`
+  - `video.data`
+  - `user.info.basic`
+- **Rate Limits:** Varies by endpoint; 1,000 requests/day typical
+- **Video Requirements:** MP4, MOV; 3 seconds - 10 minutes; max 4GB
+- **Token Expiration:** 24-hour access tokens (must refresh frequently)
+
+**Implementation Requirements:**
+- Business/Creator account required (not available for standard personal accounts)
+- Video upload via chunked upload for large files
+- Caption limit: 2,200 characters
+- Support for hashtag and mention suggestions
+- Handle content moderation delays (videos reviewed before publishing)
+- Vertical video optimization (9:16 aspect ratio recommended)
+
+**6. Pinterest API v5**
+
+**Integration Scope:**
+- **Publishing:** Pin creation with images, idea pins (multi-page), board management
+- **Analytics:** Pin impressions, clicks, saves, audience insights
+- **Content Management:** Board organization, pin scheduling
+
+**API Specifications:**
+- **Endpoint:** `https://api.pinterest.com/v5/`
+- **Authentication:** OAuth 2.0
+- **Permissions Required:**
+  - `pins:read`
+  - `pins:write`
+  - `boards:read`
+  - `boards:write`
+- **Rate Limits:** 1,000 requests/day (can request increase)
+- **Image Requirements:** PNG, JPG, GIF; min 600px width; max 10MB
+- **Token Expiration:** Never expires (until explicitly revoked)
+
+**Implementation Requirements:**
+- Support for standard pins and idea pins (carousel format)
+- Board creation and organization
+- Rich pins support (product, recipe, article metadata)
+- Pin title: 100 characters max
+- Pin description: 500 characters max
+- Support for Pinterest Lens (visual search integration)
+
+**7. YouTube Data API v3**
+
+**Integration Scope:**
+- **Publishing:** Video uploads, title/description, tags, playlists
+- **Analytics:** Views, watch time, engagement, subscriber growth, traffic sources
+- **Community:** Comments, community posts (limited)
+
+**API Specifications:**
+- **Endpoint:** `https://www.googleapis.com/youtube/v3/`
+- **Authentication:** OAuth 2.0 (Google)
+- **Permissions Required:** `https://www.googleapis.com/auth/youtube.upload`
+- **Rate Limits:** 10,000 quota units/day (upload = 1,600 units)
+- **Video Requirements:** Multiple formats supported; max 256GB; max 12 hours
+- **Token Expiration:** 1-hour access tokens; refresh tokens don't expire
+
+**Implementation Requirements:**
+- Resumable upload for videos > 5MB
+- Support for video privacy settings (public, unlisted, private, scheduled)
+- Thumbnail upload (JPG, PNG; max 2MB)
+- Title: 100 characters; description: 5,000 characters
+- Support for tags (500 characters total), categories, playlists
+- Monitor upload status (processing, rejected, failed)
+
+#### Supported Platforms (Phase 2 - Future)
+
+- **Google Business Profile** (formerly Google My Business): Posts, Q&A, reviews
+- **Snapchat Marketing API**: Story ads, spotlight content
+- **WhatsApp Business API**: Status updates, messaging
+- **Reddit API**: Subreddit posts, community management
+
+#### API Integration Architecture
+
+**OAuth 2.0 Flow:**
+1. User initiates connection to social platform
+2. System redirects to platform's OAuth consent screen
+3. User grants permissions
+4. Platform redirects back with authorization code
+5. System exchanges code for access token + refresh token
+6. System securely stores tokens (encrypted at rest)
+7. System automatically refreshes tokens before expiration
+
+**Token Management:**
+- **Storage:** Encrypted in PostgreSQL database
+- **Refresh Strategy:** Proactive refresh 7 days before expiration
+- **Failure Handling:** Notify user if refresh fails; prompt reconnection
+- **Revocation Detection:** Handle 401 errors gracefully; prompt user to reconnect
+
+**Webhook Management:**
+- **Endpoint:** `https://api.platform.com/webhooks/inbound/{platform}`
+- **Verification:** HMAC signature validation for security
+- **Processing:** Asynchronous processing via message queue (RabbitMQ)
+- **Retry Logic:** Exponential backoff for failed webhook processing
+- **Events Supported:**
+  - New comment/mention/message
+  - Post published/failed
+  - Account disconnected
+  - Content removed by platform
+  - Permission changes
+
+**Rate Limit Handling:**
+- **Detection:** Parse rate limit headers (`X-RateLimit-Remaining`, `Retry-After`)
+- **Queuing:** Queue requests when approaching limits
+- **Backoff:** Exponential backoff on 429 responses
+- **User Communication:** Display warnings when approaching limits
+- **Tier Awareness:** Track API tier per platform (e.g., Twitter Basic vs Pro)
+
+**API Error Handling:**
+- **Retry Strategy:** 3 retries with exponential backoff (1s, 5s, 15s)
+- **Categorization:**
+  - **Transient Errors (5xx):** Auto-retry
+  - **Client Errors (4xx):** Log and notify user
+  - **Auth Errors (401):** Prompt reconnection
+  - **Rate Limits (429):** Queue and retry after window
+- **Fallback:** Store failed requests for manual retry or bulk retry
+
+**API Response Caching:**
+- **Cache:** Redis with TTL based on data freshness requirements
+- **Invalidation:** Webhook-triggered invalidation for real-time updates
+- **Example TTLs:**
+  - User profile: 1 hour
+  - Analytics data: 15 minutes
+  - Real-time metrics: 2 minutes
+
+---
+
+### Cross-Platform Compatibility
+
+#### Web Application
+
+**Browser Support:**
+- **Modern Browsers (Full Support):**
+  - Chrome 110+ (90% of users)
+  - Firefox 115+ (5% of users)
+  - Safari 16+ (15% of users)
+  - Edge 110+ (10% of users)
+- **Legacy Support (Graceful Degradation):**
+  - Chrome 90+, Firefox 90+, Safari 14+
+  - Polyfills for missing features (optional)
+- **Not Supported:** Internet Explorer (end-of-life)
+
+**Responsive Design:**
+- **Mobile:** 375px - 767px (phones)
+- **Tablet:** 768px - 1023px (tablets)
+- **Desktop:** 1024px - 1439px (laptops)
+- **Large Desktop:** 1440px+ (desktop monitors)
+- **Design Approach:** Mobile-first with progressive enhancement
+
+**Progressive Web App (PWA):**
+- **Features:**
+  - Installable (add to home screen)
+  - Offline mode (service workers cache critical assets)
+  - Push notifications (browser notifications API)
+  - Background sync (queue actions when offline)
+- **Manifest:** Web app manifest for installation metadata
+- **Service Worker:** Cache-first strategy for assets, network-first for API calls
+
+**Accessibility:**
+- **Standards:** WCAG 2.1 Level AA compliance
+- **Features:**
+  - Screen reader support (ARIA labels, semantic HTML)
+  - Keyboard navigation (tab order, focus management, shortcuts)
+  - Color contrast ratios (4.5:1 for text, 3:1 for UI elements)
+  - Text scaling (up to 200% without breaking layout)
+  - Focus indicators (visible outlines for keyboard users)
+- **Testing:** Automated (Axe, Lighthouse) + manual testing with screen readers (NVDA, JAWS, VoiceOver)
+
+#### iOS Native App
+
+**Device Support:**
+- **iOS Version:** iOS 16+ (95% of iPhone users)
+- **Devices:**
+  - iPhone 12/13/14/15/16 series
+  - iPhone SE (3rd gen)
+  - iPad Pro, iPad Air, iPad Mini (8th gen+)
+- **Screen Sizes:**
+  - iPhone: 5.4" - 6.7"
+  - iPad: 8.3" - 12.9"
+
+**Features:**
+- **Native Capabilities:**
+  - Camera integration (photo/video capture)
+  - Photo library access
+  - Push notifications (APNs)
+  - Face ID / Touch ID (biometric authentication)
+  - Share extension (share content from other apps)
+  - Shortcuts integration (Siri Shortcuts)
+- **Offline Support:** Core Data local storage with background sync
+- **Dark Mode:** Full support for iOS dark mode
+- **Widgets:** Home screen and lock screen widgets (iOS 16+)
+
+**Performance Targets:**
+- **App Launch:** < 2 seconds (cold start)
+- **View Transitions:** 60 FPS animations
+- **Memory:** < 200MB typical usage
+- **Battery:** Minimal background battery usage (< 5%/hour with notifications)
+
+#### Android Native App
+
+**Device Support:**
+- **Android Version:** Android 11+ (API level 30+, 85% of Android users)
+- **Devices:**
+  - Samsung Galaxy S21/S22/S23/S24 series
+  - Google Pixel 6/7/8/9 series
+  - OnePlus, Xiaomi, Motorola flagship/mid-range
+- **Screen Sizes:** 5.0" - 7.6" (including foldables)
+- **Screen Densities:** mdpi, hdpi, xhdpi, xxhdpi, xxxhdpi
+
+**Features:**
+- **Native Capabilities:**
+  - Camera integration
+  - Gallery access
+  - Push notifications (Firebase Cloud Messaging)
+  - Biometric authentication
+  - Share target (receive content from other apps)
+  - App Shortcuts (launcher shortcuts)
+- **Offline Support:** Room database with WorkManager for background sync
+- **Dark Mode:** Full support for Android dark theme
+- **Widgets:** Home screen widgets (Material You design)
+
+**Performance Targets:**
+- **App Launch:** < 2.5 seconds (cold start)
+- **View Transitions:** 60 FPS animations
+- **Memory:** < 250MB typical usage
+- **Battery:** Minimal background battery usage (< 5%/hour with notifications)
+
+#### Desktop Applications (Future)
+
+**Electron Desktop App:**
+- **Platforms:** Windows 10+, macOS 12+, Linux (Ubuntu 22.04+)
+- **Benefits:** Native menu bars, keyboard shortcuts, system tray, offline mode
+- **Bundle Size Target:** < 150MB installer
+
+**Browser Extension:**
+- **Browsers:** Chrome, Firefox, Edge, Safari (Manifest V3)
+- **Features:**
+  - Quick post creation from any webpage
+  - Share webpage as post (URL, title, image extraction)
+  - Notification badge for new messages/comments
+  - Context menu integration
+
+#### API & Integrations
+
+**Public API:**
+- **REST API:** Full-featured API for third-party integrations
+- **Webhooks:** Outbound webhooks for events (post published, comment received)
+- **Rate Limits:** Tiered by subscription (Free: 1,000/day, Pro: 10,000/day, Enterprise: custom)
+- **Documentation:** OpenAPI 3.0 spec, interactive docs (Swagger UI)
+
+**Zapier Integration:**
+- Triggers: New post published, new comment, new follower
+- Actions: Create post, schedule post, add to content library
+
+**Make (Integromat) Integration:**
+- Full platform integration with visual workflow builder
+
+**WordPress Plugin:**
+- Auto-publish WordPress blog posts to social media
+- Cross-post between WordPress and platform
+
+---
+
+### Security Requirements
+
+**Data Encryption:**
+- **In Transit:** TLS 1.3 for all connections
+- **At Rest:** AES-256 encryption for database (RDS encryption), S3 encryption
+- **Tokens:** Access tokens encrypted with KMS before storage
+
+**Authentication & Authorization:**
+- **User Auth:** OAuth 2.0 + JWT tokens (15-minute expiry, sliding refresh)
+- **API Auth:** API keys (for integrations) + OAuth 2.0 (for user-based access)
+- **MFA:** Optional 2FA via TOTP (Google Authenticator, Authy)
+- **SSO:** SAML 2.0 for enterprise customers (Okta, Azure AD integration)
+
+**RBAC (Role-Based Access Control):**
+- **Roles:** Owner, Admin, Manager, Editor, Viewer (per team)
+- **Permissions:** Granular permissions (publish, schedule, delete, approve, view analytics)
+- **Enforcement:** API-level authorization checks on every request
+
+**Compliance:**
+- **GDPR:** Right to data export, deletion; consent management
+- **CCPA:** California consumer privacy rights
+- **SOC 2 Type II:** Annual audit (Year 2+)
+- **HIPAA:** Not required (no health data)
+
+**Rate Limiting & DDoS Protection:**
+- **API Rate Limits:** Per-user and per-IP rate limiting (Cloudflare + application-level)
+- **DDoS Protection:** Cloudflare (Layer 3/4 + Layer 7)
+- **WAF:** Cloudflare WAF rules for common attack vectors
+
+**Data Privacy:**
+- **PII Handling:** Minimal PII collection, encrypted storage, access logging
+- **Data Retention:** User data deleted within 30 days of account deletion
+- **Audit Logs:** All data access logged for security auditing
+
+---
+
+This completes the comprehensive Technical Requirements and System Architecture section for the Social Media Management Platform PRD.
