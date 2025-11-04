@@ -12,6 +12,31 @@ interface Ground {
   image: string;
 }
 
+interface Booking {
+  ground: Ground;
+  date: string;
+  time: string;
+  playerName: string;
+}
+
+type TimeSlot = {
+  value: string;
+  label: string;
+};
+
+const TIME_SLOTS: TimeSlot[] = [
+  { value: '08:00', label: '08:00 AM - 09:00 AM' },
+  { value: '09:00', label: '09:00 AM - 10:00 AM' },
+  { value: '10:00', label: '10:00 AM - 11:00 AM' },
+  { value: '11:00', label: '11:00 AM - 12:00 PM' },
+  { value: '14:00', label: '02:00 PM - 03:00 PM' },
+  { value: '15:00', label: '03:00 PM - 04:00 PM' },
+  { value: '16:00', label: '04:00 PM - 05:00 PM' },
+  { value: '17:00', label: '05:00 PM - 06:00 PM' },
+  { value: '18:00', label: '06:00 PM - 07:00 PM' },
+  { value: '19:00', label: '07:00 PM - 08:00 PM' },
+];
+
 const grounds: Ground[] = [
   {
     id: 1,
@@ -57,17 +82,35 @@ export default function Home() {
   const [bookingTime, setBookingTime] = useState('');
   const [playerName, setPlayerName] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+
+  const getMinDate = (): string => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
 
   const handleBooking = (e: React.FormEvent) => {
     e.preventDefault();
-    setShowSuccess(true);
-    setTimeout(() => {
-      setShowSuccess(false);
-      setSelectedGround(null);
-      setBookingDate('');
-      setBookingTime('');
-      setPlayerName('');
-    }, 3000);
+
+    if (selectedGround) {
+      const newBooking: Booking = {
+        ground: selectedGround,
+        date: bookingDate,
+        time: bookingTime,
+        playerName: playerName,
+      };
+
+      setBookings([...bookings, newBooking]);
+      setShowSuccess(true);
+
+      setTimeout(() => {
+        setShowSuccess(false);
+        setSelectedGround(null);
+        setBookingDate('');
+        setBookingTime('');
+        setPlayerName('');
+      }, 3000);
+    }
   };
 
   return (
@@ -161,6 +204,7 @@ export default function Home() {
                   <input
                     type="date"
                     required
+                    min={getMinDate()}
                     value={bookingDate}
                     onChange={(e) => setBookingDate(e.target.value)}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
@@ -176,16 +220,11 @@ export default function Home() {
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   >
                     <option value="">Select a time</option>
-                    <option value="08:00">08:00 AM - 09:00 AM</option>
-                    <option value="09:00">09:00 AM - 10:00 AM</option>
-                    <option value="10:00">10:00 AM - 11:00 AM</option>
-                    <option value="11:00">11:00 AM - 12:00 PM</option>
-                    <option value="14:00">02:00 PM - 03:00 PM</option>
-                    <option value="15:00">03:00 PM - 04:00 PM</option>
-                    <option value="16:00">04:00 PM - 05:00 PM</option>
-                    <option value="17:00">05:00 PM - 06:00 PM</option>
-                    <option value="18:00">06:00 PM - 07:00 PM</option>
-                    <option value="19:00">07:00 PM - 08:00 PM</option>
+                    {TIME_SLOTS.map((slot) => (
+                      <option key={slot.value} value={slot.value}>
+                        {slot.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
