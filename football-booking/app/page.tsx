@@ -1,55 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-
-interface Ground {
-  id: number;
-  name: string;
-  location: string;
-  price: number;
-  size: string;
-  surface: string;
-  image: string;
-}
-
-const grounds: Ground[] = [
-  {
-    id: 1,
-    name: 'Premier Football Arena',
-    location: 'Downtown Sports Complex',
-    price: 50,
-    size: '11-a-side',
-    surface: 'Natural Grass',
-    image: '🏟️',
-  },
-  {
-    id: 2,
-    name: 'City Sports Ground',
-    location: 'North Park',
-    price: 35,
-    size: '7-a-side',
-    surface: 'Artificial Turf',
-    image: '⚽',
-  },
-  {
-    id: 3,
-    name: 'Elite Football Pitch',
-    location: 'West End Stadium',
-    price: 60,
-    size: '11-a-side',
-    surface: 'Hybrid Grass',
-    image: '🏟️',
-  },
-  {
-    id: 4,
-    name: 'Community Football Field',
-    location: 'East Side Recreation',
-    price: 25,
-    size: '5-a-side',
-    surface: 'Artificial Turf',
-    image: '⚽',
-  },
-];
+import { Ground } from '@/types';
+import { TIME_SLOTS } from '@/constants/timeSlots';
+import { grounds } from '@/data/grounds';
 
 export default function Home() {
   const [selectedGround, setSelectedGround] = useState<Ground | null>(null);
@@ -176,16 +130,11 @@ export default function Home() {
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   >
                     <option value="">Select a time</option>
-                    <option value="08:00">08:00 AM - 09:00 AM</option>
-                    <option value="09:00">09:00 AM - 10:00 AM</option>
-                    <option value="10:00">10:00 AM - 11:00 AM</option>
-                    <option value="11:00">11:00 AM - 12:00 PM</option>
-                    <option value="14:00">02:00 PM - 03:00 PM</option>
-                    <option value="15:00">03:00 PM - 04:00 PM</option>
-                    <option value="16:00">04:00 PM - 05:00 PM</option>
-                    <option value="17:00">05:00 PM - 06:00 PM</option>
-                    <option value="18:00">06:00 PM - 07:00 PM</option>
-                    <option value="19:00">07:00 PM - 08:00 PM</option>
+                    {TIME_SLOTS.map((slot) => (
+                      <option key={slot.value} value={slot.value}>
+                        {slot.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
